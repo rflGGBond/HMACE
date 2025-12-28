@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 import warnings
 import openai
 import torch
+import ast
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 # # Try to import torch and transformers for local model support
@@ -18,7 +19,7 @@ class LLMClient:
     A simple client to interact with an LLM provider (e.g., OpenAI, Anthropic, or Local).
     Supports local models deployed in a specific directory.
     """
-    def __init__(self, provider: str = "mock", api_key: Optional[str] = None, model: str = "gpt-4-turbo", model_root: str = "../../../models"):
+    def __init__(self, provider: str = "local", api_key: Optional[str] = None, model: str = "Qwen2.5-14B", model_root: str = "../../../models"):
         self.provider = provider
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
@@ -107,6 +108,9 @@ class LLMClient:
         """
         Extracts JSON substring from text and attempts to fix common issues.
         """
+        # Debug print to see what LLM is actually returning
+        print(f"DEBUG: Raw LLM response: {text[:200]}..." if len(text) > 200 else f"DEBUG: Raw LLM response: {text}")
+
         # Remove Markdown code blocks if present
         if "```json" in text:
             try:
@@ -126,7 +130,34 @@ class LLMClient:
         end = text.rfind("}")
         
         if start != -1 and end != -1:
-            return text[start:end+1]
+            extracted_text = text[start:end+1]
+            
+            # 1. Try standard JSON load
+            try:
+                json.loads(extracted_text)
+                return extracted_text
+            except json.JSONDecodeError:
+                pass
+                
+            # 2. Try ast.literal_eval (handles Python-style dicts with single quotes, etc.)
+            try:
+                # ast.literal_eval is safe for literal structures
+                py_obj = ast.literal_eval(extracted_text)
+                return json.dumps(py_obj)
+            except (ValueError, SyntaxError):
+                pass
+                
+            # 3. Simple manual fixes (last resort)
+            # Replace single quotes with double quotes (risky if content has quotes)
+            # This is a heuristic attempt
+            try:
+                fixed_text = extracted_text.replace("'", '"').replace("True", "true").replace("False", "false").replace("None", "null")
+                json.loads(fixed_text)
+                return fixed_text
+            except json.JSONDecodeError:
+                pass
+                
+            return extracted_text # Return best effort extraction
             
         return text
 

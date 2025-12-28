@@ -2,7 +2,7 @@
 
 # Configuration Parameters
 GRAPH_NAME="facebook"
-TOTAL_BUDGET=50
+TOTAL_BUDGET=20
 NUM_COMMUNITIES=4
 MAX_GEN=20
 T_COMM=5
@@ -12,7 +12,7 @@ T_COMM=5
 LLM_PROVIDER="local" 
 # For local: model folder name (e.g. Qwen2.5-7B)
 # For openai: model id (e.g. gpt-4-turbo)
-LLM_MODEL="Qwen2.5-7B" 
+LLM_MODEL="Qwen2.5-14B" 
 API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8" 
 MODEL_ROOT="../../models"
 

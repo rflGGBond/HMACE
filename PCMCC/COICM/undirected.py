@@ -1214,7 +1214,7 @@ if __name__ == "__main__":
 
         SN = copy.deepcopy(SN_dic[file_name])
 
-        for k in [20, 110, 200]:
+        for k in [20]:
 
             repeats = 2
 
