@@ -2,22 +2,23 @@ import json
 import os
 from typing import Dict, Any, Optional
 import warnings
-import OpenAI
+import openai
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-# Try to import torch and transformers for local model support
-try:
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-    _LOCAL_DEPS_AVAILABLE = True
-except ImportError:
-    _LOCAL_DEPS_AVAILABLE = False
+# # Try to import torch and transformers for local model support
+# try:
+    
+#     _LOCAL_DEPS_AVAILABLE = True
+# except ImportError:
+#     _LOCAL_DEPS_AVAILABLE = False
 
 class LLMClient:
     """
     A simple client to interact with an LLM provider (e.g., OpenAI, Anthropic, or Local).
     Supports local models deployed in a specific directory.
     """
-    def __init__(self, provider: str = "mock", api_key: Optional[str] = None, model: str = "gpt-4-turbo", model_root: str = "/home/dell/lfr/models"):
+    def __init__(self, provider: str = "mock", api_key: Optional[str] = None, model: str = "gpt-4-turbo", model_root: str = "../../../models"):
         self.provider = provider
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
@@ -66,7 +67,10 @@ class LLMClient:
             return self._mock_response(system_prompt, user_prompt)
         
         elif self.provider == "local":
-            return self._local_response(system_prompt, user_prompt, response_format)
+            response = self._local_response(system_prompt, user_prompt, response_format)
+            if response_format == "json":
+                return self._clean_and_extract_json(response)
+            return response
 
         elif self.provider == "openai":
             try:
@@ -74,7 +78,7 @@ class LLMClient:
             except ImportError:
                 raise ImportError("OpenAI provider requires 'openai' package. Please install it.")
 
-            client = openai.OpenAI(api_key=self.api_key)
+            client = openai.OpenAI(api_key=self.api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
             
             # Prepare messages
             messages = [
@@ -91,10 +95,40 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
             
             response = client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if response_format == "json":
+                return self._clean_and_extract_json(content)
+            return content
             
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
+
+    def _clean_and_extract_json(self, text: str) -> str:
+        """
+        Extracts JSON substring from text and attempts to fix common issues.
+        """
+        # Remove Markdown code blocks if present
+        if "```json" in text:
+            try:
+                text = text.split("```json")[1].split("```")[0]
+            except IndexError:
+                pass
+        elif "```" in text:
+            try:
+                text = text.split("```")[1].split("```")[0]
+            except IndexError:
+                pass
+        
+        text = text.strip()
+        
+        # Find the first '{' and the last '}'
+        start = text.find("{")
+        end = text.rfind("}")
+        
+        if start != -1 and end != -1:
+            return text[start:end+1]
+            
+        return text
 
     def _local_response(self, system_prompt: str, user_prompt: str, response_format: str) -> str:
         """

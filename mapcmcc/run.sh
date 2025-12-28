@@ -9,12 +9,12 @@ T_COMM=5
 
 # LLM Configuration
 # Options: mock, local, openai
-LLM_PROVIDER="mock" 
+LLM_PROVIDER="local" 
 # For local: model folder name (e.g. Qwen2.5-7B)
 # For openai: model id (e.g. gpt-4-turbo)
 LLM_MODEL="Qwen2.5-7B" 
-API_KEY="" 
-MODEL_ROOT="/home/dell/lfr/models"
+API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8" 
+MODEL_ROOT="../../models"
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

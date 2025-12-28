@@ -28,12 +28,15 @@ class CommunityAgent(BaseAgent):
         2. Candidate Generation (Mode B): Propose a specific list of node IDs ('candidate_seed_set') to replace the current seed.
         
         Input Format: A JSON object describing the current state of your community.
-        Output Format: A JSON object with the following fields:
+        
+        IMPORTANT: Output ONLY the JSON object. Do not include any explanation, markdown formatting, or code blocks.
+        
+        Output Format Example:
         {
-            "reasoning": "string explanation",
+            "reasoning": "Performance is stagnant, increasing mutation rates.",
             "action_type": "adjust_parameters" or "propose_candidate",
-            "parameters": { "cr1": float, "cr2": float, "beta": float, "alpha": float } (Required if Mode A),
-            "candidate_seed_set": [list of int] (Required if Mode B, else null)
+            "parameters": { "cr1": 0.5, "cr2": 0.5, "beta": 3.0, "alpha": 10.0 },
+            "candidate_seed_set": null
         }
         """
         

@@ -19,7 +19,7 @@ class Logger(object):
         output_dir = "../../results/directed"  # folder 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        log_name = "COICM_email-Eu-core_log_20251127.txt"
+        log_name = "COICM_email-Eu-core_log_20251228.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -1163,7 +1163,7 @@ if __name__ == "__main__":
 
         for k in [20, 110, 200]:
 
-            repeats = 10
+            repeats = 2
 
             for r in range(repeats):
                 print("\nPCMCC", file_name, k, r + 1)

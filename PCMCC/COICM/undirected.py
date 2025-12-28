@@ -19,7 +19,7 @@ class Logger(object):
         output_dir = "../../results/undirected" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        log_name = "COICM_BA3000_log_20251127.txt"
+        log_name = "facebook_log_20251228.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -1198,7 +1198,7 @@ if __name__ == "__main__":
     
     SN_dic["WS3000"] = select_SN("WS3000", SN_size)
 
-    graphs = ["BA3000"]
+    graphs = ["facebook"]
 
     for file_name in graphs:
         G = nx.Graph()
@@ -1216,7 +1216,7 @@ if __name__ == "__main__":
 
         for k in [20, 110, 200]:
 
-            repeats = 10
+            repeats = 2
 
             for r in range(repeats):
                 print("\nPCMCC", file_name, k, r + 1)

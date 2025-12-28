@@ -25,9 +25,9 @@ def main():
     
     # LLM Arguments
     parser.add_argument("--llm_provider", type=str, default="mock", choices=["mock", "local", "openai"], help="LLM Provider")
-    parser.add_argument("--llm_model", type=str, default="gpt-4-turbo", help="Model name (or path for local)")
+    parser.add_argument("--llm_model", type=str, default="qwen3-max", help="Model name (or path for local)")
     parser.add_argument("--api_key", type=str, default=None, help="API Key for OpenAI")
-    parser.add_argument("--model_root", type=str, default="/home/dell/lfr/models", help="Root directory for local models")
+    parser.add_argument("--model_root", type=str, default="../../models", help="Root directory for local models")
 
     args = parser.parse_args()
 
@@ -64,8 +64,7 @@ def main():
     # MetaAgent is currently missing in the repo or imported incorrectly, 
     # but assuming it exists or will be fixed:
     try:
-        meta_agent = MetaAgent() # MetaAgent likely needs llm_client too if implemented
-        # meta_agent = MetaAgent(llm_client=llm_client) 
+        meta_agent = MetaAgent(llm_client=llm_client) 
     except Exception as e:
         print(f"Warning: Failed to initialize MetaAgent: {e}")
         meta_agent = None
