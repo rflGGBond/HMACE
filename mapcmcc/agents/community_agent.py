@@ -71,7 +71,15 @@ class CommunityAgent(BaseAgent):
                 action.parameters = response_json.get("parameters")
             
             elif response_json.get("action_type") == "propose_candidate":
-                action.candidate_seed_set = response_json.get("candidate_seed_set")
+                candidates = response_json.get("candidate_seed_set")
+                if candidates and isinstance(candidates, list):
+                    # Auto-fix: Truncate if too long
+                    if len(candidates) > observation.budget:
+                        print(f"DEBUG: Truncating candidate set from {len(candidates)} to {observation.budget}")
+                        candidates = candidates[:observation.budget]
+                    action.candidate_seed_set = candidates
+                else:
+                     action.candidate_seed_set = candidates # Pass through if None or invalid type, let validation handle it
                 
             return action
             
