@@ -82,11 +82,10 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
     repeatS1 = 0
     repeatSI = 0 # Not used for S1 return but kept for logic consistency if we wanted both
 
-    for J in range(budget):
+    for J in range(len(S1)):
         if random.random() < cOne:
             if random.random() < cTwo:  # two-way cross
                 temp = S1[J]
-                # Check duplicates
                 if SI[J] not in S1 or SI[J] == S1[J]:
                     S1[J] = SI[J]
                 else:
@@ -122,7 +121,7 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
     repeatS1 = 0
     repeatSI = 0
 
-    for J in range(budget):
+    for J in range(len(S1)):
         if random.random() < cOne:
             if random.random() < cTwo:  # two-way cross
                 temp = S1[J]

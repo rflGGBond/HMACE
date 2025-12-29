@@ -82,25 +82,25 @@ class DPADVEvaluator:
             two_One = two_hop_neighbors - oneAndF
 
             for t in range(1, hop + 1):
-                rs_P_S[u] += N_prob[u, t]
+                rs_P_S[u] += N_prob.get((u, t), 0)
 
             for v in oneAndF:
                 for t in range(1, hop + 1):
-                    rs_P_S[u] += G[u][v]['weight'] * N_prob[v, t]
+                    rs_P_S[u] += G[u][v]['weight'] * N_prob.get((v, t), 0)
 
             for w in twoAndOne:
                 temp_p = 1
                 for v in set(predecessors[w]):
                     temp_p *= (1 - G[u][v]['weight'] * G[v][w]['weight'])
                 for t in range(2, hop + 1):
-                    rs_P_S[u] += (1 - G[u][w]['weight']) * (1 - temp_p) * (1 - N_prob[w, 1]) * N_prob[w, t]
+                    rs_P_S[u] += (1 - G[u][w]['weight']) * (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
 
             for w in two_One:
                 temp_p = 1
                 for v in set(predecessors[w]):
                     temp_p *= (1 - G[u][v]['weight'] * G[v][w]['weight'])
                 for t in range(2, hop + 1):
-                    rs_P_S[u] += (1 - temp_p) * (1 - N_prob[w, 1]) * N_prob[w, t]
+                    rs_P_S[u] += (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
 
         return rs_P_S
 
@@ -208,3 +208,14 @@ class DPADVEvaluator:
                 break
                 
         return neg_activated
+
+    @staticmethod
+    def get_activated_node_count(seed_set, G, SN, max_hop=2, simulations=3):
+        """
+        Calculates the average number of negatively activated nodes by running multiple simulations.
+        """
+        total_activated = 0
+        for _ in range(simulations):
+            neg_set = DPADVEvaluator.simulate_propagation(G, seed_set, SN, max_hop)
+            total_activated += len(neg_set)
+        return total_activated / simulations

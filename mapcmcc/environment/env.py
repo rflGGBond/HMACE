@@ -327,6 +327,12 @@ class PCMCCEnvironment:
                 print(f"Agent {community_id} provided seed set of wrong size. Ignored.")
                 return
 
+            # Validate node existence
+            for node in action.candidate_seed_set:
+                if not self.Gs.has_node(node):
+                    print(f"Agent {community_id} proposed non-existent node {node}. Ignored.")
+                    return
+
             # Construct Global Candidate: Combine new candidate with OTHER communities' current bests
             global_candidate_seed = []
             for cid, other_com in self.communities.items():

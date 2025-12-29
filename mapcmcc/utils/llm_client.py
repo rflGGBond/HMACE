@@ -109,7 +109,7 @@ class LLMClient:
         Extracts JSON substring from text and attempts to fix common issues.
         """
         # Debug print to see what LLM is actually returning
-        print(f"DEBUG: Raw LLM response: {text[:200]}..." if len(text) > 200 else f"DEBUG: Raw LLM response: {text}")
+        # print(f"DEBUG: Raw LLM response: {text[:200]}..." if len(text) > 200 else f"DEBUG: Raw LLM response: {text}")
 
         # Remove Markdown code blocks if present
         if "```json" in text:
@@ -136,7 +136,15 @@ class LLMClient:
             try:
                 json.loads(extracted_text)
                 return extracted_text
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                # Handle "Extra data" error by truncating at the error position
+                if e.msg.startswith("Extra data"):
+                    try:
+                        truncated_text = extracted_text[:e.pos]
+                        json.loads(truncated_text)
+                        return truncated_text
+                    except:
+                        pass
                 pass
                 
             # 2. Try ast.literal_eval (handles Python-style dicts with single quotes, etc.)
@@ -157,9 +165,12 @@ class LLMClient:
             except json.JSONDecodeError:
                 pass
                 
-            return extracted_text # Return best effort extraction
+            # If all parsing attempts fail, raise ValueError instead of returning invalid string
+            raise ValueError(f"Failed to parse JSON from extracted text: {extracted_text[:100]}...")
             
-        return text
+        # If no JSON object found, raise ValueError to be caught by caller
+        raise ValueError(f"No JSON object found in LLM response: {text[:100]}...")
+
 
     def _local_response(self, system_prompt: str, user_prompt: str, response_format: str) -> str:
         """
@@ -184,7 +195,7 @@ class LLMClient:
         gen_kwargs = {
             "max_new_tokens": 512,
             "do_sample": True,
-            "temperature": 0.7,
+            "temperature": 0.8,
             "top_p": 0.9,
         }
         

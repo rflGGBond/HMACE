@@ -11,6 +11,7 @@ import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from select_SN import select_SN
+import matplotlib.pyplot as plt
 
 # log recorder
 class Logger(object):
@@ -19,7 +20,7 @@ class Logger(object):
         output_dir = "../../results/undirected" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        log_name = "facebook_log_20251228.txt"
+        log_name = "log_20251229.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -1198,7 +1199,7 @@ if __name__ == "__main__":
     
     SN_dic["WS3000"] = select_SN("WS3000", SN_size)
 
-    graphs = ["facebook"]
+    graphs = ["facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"]
 
     for file_name in graphs:
         G = nx.Graph()
@@ -1214,9 +1215,14 @@ if __name__ == "__main__":
 
         SN = copy.deepcopy(SN_dic[file_name])
 
-        for k in [20, 110, 200]:
+        k_values = [20, 110, 200]
+        avg_neg_nodes_list = []
 
-            repeats = 5
+        for k in k_values:
+
+            repeats = 3
+        
+            current_k_results = []
 
             for r in range(repeats):
                 print("\nPCMCC", file_name, k, r + 1)
@@ -1631,3 +1637,32 @@ if __name__ == "__main__":
                 # print("negative activated nodes: ", num_neg_activated)
                 neg_activated_set = simulate_propagation(Gs, bestS, SN, hop)
                 print(f"Negatively Activated Nodes: {len(neg_activated_set)}")
+                current_k_results.append(len(neg_activated_set))
+
+            if current_k_results:
+                avg_neg_nodes_list.append(sum(current_k_results) / len(current_k_results))
+            else:
+                avg_neg_nodes_list.append(0)
+
+        try:
+            output_fig_dir = f"../../results/result_figs/"
+            if not os.path.exists(output_fig_dir):
+                os.makedirs(output_fig_dir)
+            
+            plt.figure(figsize=(6, 6))
+            plt.plot(k_values, avg_neg_nodes_list, marker='o', linestyle='--', label=file_name, color='salmon')
+            
+            # Add value labels for each point
+            for x, y in zip(k_values, avg_neg_nodes_list):
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+
+            plt.title(f'COICM {file_name}')
+            plt.xlabel('k')
+            plt.ylabel('Negatively Activated Nodes')
+            plt.xticks(k_values)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_fig_dir, f'COICM_{file_name}_k_trend.png'))
+            plt.close()
+            print(f"Saved plot to {os.path.join(output_fig_dir, f'COICM_{file_name}_k_trend.png')}")
+        except Exception as e:
+            print(f"Error plotting: {e}")

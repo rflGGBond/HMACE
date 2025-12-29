@@ -16,25 +16,41 @@ class CommunityAgent(BaseAgent):
     def get_action(self, observation: CommunityObservation) -> CommunityAction:
         # 1. Prepare Prompt
         obs_dict = dataclasses.asdict(observation)
-        # Convert complex objects to string if needed, or rely on JSON serializer
-        # (Top-K nodes might need simplification to save tokens)
         
+        # Truncate history to prevent prompt overflow
+        if "dpadv_history" in obs_dict and isinstance(obs_dict["dpadv_history"], list):
+            obs_dict["dpadv_history"] = obs_dict["dpadv_history"][-10:] # Keep only last 10 entries
+            
+        # Truncate boundary info if too large (optional, but recommended)
+        if "boundary_info" in obs_dict and isinstance(obs_dict["boundary_info"], dict):
+             # Just keep a summary or limit keys if needed. For now, we trust it's not huge or we just summarize size.
+             # obs_dict["boundary_info"] = f"Boundary Info with {len(obs_dict['boundary_info'])} items"
+             pass
+
         system_prompt = """
-        You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm.
+        You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm and a strict JSON generator.
         Your goal is to optimize the 'DPADV' (Negative Influence Blocking) for your specific community.
         
-        You have two modes of operation:
-        1. Parameter Adjustment (Mode A): Tune 'cr1', 'cr2' (crossover rates), 'beta' (local search strength), 'alpha'.
-        2. Candidate Generation (Mode B): Propose a specific list of node IDs ('candidate_seed_set') to replace the current seed.
+        GOAL: Optimize 'DPADV' (Blocking Influence) for your community.
         
-        Input Format: A JSON object describing the current state of your community.
+        MODES:
+        A. "adjust_parameters": Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
+        B. "propose_candidate": Propose a list of integer node IDs to be the new seed set. (Size MUST match 'budget')
         
-        IMPORTANT: Output ONLY the JSON object. Do not include any explanation, markdown formatting, or code blocks.
+        INPUT: JSON state of your community.
         
-        Output Format Example:
+        OUTPUT RULES:
+        1. Return ONLY valid JSON.
+        2. NO markdown (no ```json).
+        3. NO explanations outside the JSON.
+        4. "action_type" MUST be "adjust_parameters" OR "propose_candidate".
+        5. "reasoning" MUST be a single concise sentence (max 20 words). Keep it brief.
+        6. "candidate_seed_set" size MUST equal the 'budget' value in input.
+        
+        EXAMPLE OUTPUT:
         {
             "reasoning": "Performance is stagnant, increasing mutation rates.",
-            "action_type": "adjust_parameters" or "propose_candidate",
+            "action_type": "adjust_parameters",
             "parameters": { "cr1": 0.5, "cr2": 0.5, "beta": 3.0, "alpha": 10.0 },
             "candidate_seed_set": null
         }
@@ -45,6 +61,7 @@ class CommunityAgent(BaseAgent):
         # 2. Call LLM
         try:
             response_str = self.llm_client.get_completion(system_prompt, user_prompt)
+            print(f"LLM Response: {response_str}")  # 输出LLM的原始响应
             response_json = json.loads(response_str)
             
             # 3. Parse Response to Action
@@ -59,6 +76,11 @@ class CommunityAgent(BaseAgent):
             return action
             
         except Exception as e:
-            print(f"LLM Error in CommunityAgent {self.agent_id}: {e}. Fallback to default.")
-            return CommunityAction() # Return empty action (do nothing)
-
+            # Enhanced error logging with raw hex output for invisible characters check
+            import binascii
+            raw_hex = binascii.hexlify(response_str.encode('utf-8', errors='ignore')).decode() if 'response_str' in locals() else "N/A"
+            print(f"LLM Error in CommunityAgent {self.agent_id}: {e}.")
+            if 'response_str' in locals():
+                print(f"DEBUG: Failed Raw Response (Hex): {raw_hex}")
+            print("Fallback to default.")
+            return CommunityAction()  # Return empty action (do nothing)

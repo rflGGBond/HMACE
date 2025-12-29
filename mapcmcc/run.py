@@ -19,7 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run MAPCMCC")
     parser.add_argument("--graph_name", type=str, default="facebook", help="Name of the graph file (without extension)")
     parser.add_argument("--total_budget", type=int, default=50, help="Total budget")
-    parser.add_argument("--num_communities", type=int, default=4, help="Number of communities")
+    parser.add_argument("--num_communities", type=int, default=16, help="Number of communities")
     parser.add_argument("--max_gen", type=int, default=20, help="Maximum number of generations")
     parser.add_argument("--t_comm", type=int, default=5, help="Communication interval")
     
@@ -135,6 +135,15 @@ def main():
     end_time = time.time()
     print(f"\nEvolution Finished. Total Time: {end_time - start_time:.2f}s")
     print(f"Best Global DPADV: {env.global_best_dpadv}")
+
+    # Calculate and print Negatively Activated Nodes
+    from mapcmcc.core.evaluator import DPADVEvaluator
+    if env.global_best_seed:
+        print("Calculating final activated nodes...")
+        neg_activated_count = DPADVEvaluator.get_activated_node_count(env.global_best_seed, env.Gs, env.sn_nodes)
+        print(f"Negatively Activated Nodes: {neg_activated_count}")
+    else:
+        print("Warning: No global best seed set found.")
 
 if __name__ == "__main__":
     main()
