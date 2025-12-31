@@ -493,7 +493,7 @@ def evolve_community(
                 )
         
         g += 1
-        # print(f"{community_id}, {subpop_id} Gen {g} done")
+        print(f"{community_id}, {subpop_id} Gen {g} done")
 
         # Update Locks
         if is_max_community:

@@ -1,3 +1,5 @@
+from select_SN import select_SN
+import matplotlib.pyplot as plt
 import re
 import os, sys
 import time
@@ -10,17 +12,15 @@ import networkx as nx
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from select_SN import select_SN
-import matplotlib.pyplot as plt
 
 # log recorder
 class Logger(object):
 
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/undirected" 
+        output_dir = "../../results/directed"  # folder 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        log_name = "log_20251229.txt"
+        log_name = "log_20251231.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -36,7 +36,7 @@ class Logger(object):
 
 def communityDivision_1(G_1, C_1):
     c_G = G_1.copy()
-    c_g = copy.deepcopy(ig.Graph.TupleList(list(c_G.edges(data='weight')), directed=False, edge_attrs=['weight']))
+    c_g = copy.deepcopy(ig.Graph.TupleList(list(c_G.edges(data='weight')), directed=True, edge_attrs=['weight']))
     c_part = leidenalg.find_partition(c_g, leidenalg.ModularityVertexPartition, weights=c_g.es['weight'],
                                       n_iterations=-1)
     print("------------------- communityDivision start -----------------------")
@@ -54,18 +54,21 @@ def communityDivision_1(G_1, C_1):
 
     # print(rs_part)
 
+    # 调整社区数目
     while len(rs_part) != C_1:
         if len(rs_part) > C_1:
+            # 合并最小的两个社区
             lengths = [len(lst) for lst in rs_part]
             min_indices = sorted(range(len(lengths)), key=lambda k: lengths[k])[:2]
             rs_part[min_indices[1]].extend(rs_part[min_indices[0]])
             del rs_part[min_indices[0]]
         if len(rs_part) < C_1:
+            # 拆分最大的社区
             lengths = [len(lst) for lst in rs_part]
             max_indices = sorted(range(len(lengths)), key=lambda k: lengths[k])[-1]
             a_G = G_1.subgraph(rs_part[max_indices]).copy()
             a_g = copy.deepcopy(
-                ig.Graph.TupleList(list(a_G.edges(data='weight')), directed=False, edge_attrs=['weight']))
+                ig.Graph.TupleList(list(a_G.edges(data='weight')), directed=True, edge_attrs=['weight']))
             a_part = leidenalg.find_partition(a_g, leidenalg.ModularityVertexPartition, weights=a_g.es['weight'],
                                               n_iterations=-1)
             a_rs_part = []
@@ -184,10 +187,12 @@ def outer_5(population_5, i_5, j_5, Ni_5):
 def calEffect_6(i_6, j_6, Ni_6, populationij_6, comGsi_6, SN_6, comAndFSi_6, hop_6):
     effect_6 = {}
     for I in range(Ni_6):
+        # 直接获取适应度值
         effect_6[i_6, j_6, I] = fitness_C_7(populationij_6[I], comGsi_6, SN_6, comAndFSi_6, hop_6)
     return effect_6
 
 def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
+    G_7 = G_7.to_directed()
     effect_fc = 0
     ZP_fc = []
     ZN_fc = []
@@ -200,6 +205,7 @@ def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
     apP_fc = defaultdict(lambda: 0)
     pN_fc = defaultdict(lambda: 0)
     apN_fc = defaultdict(lambda: 0)
+    # 初始化传播概率
     for v in seed_7:
         pP_fc[v, 0] = 1
         for h in range(hop_7 + 1):
@@ -208,11 +214,14 @@ def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
         pN_fc[v, 0] = 1
         for h in range(hop_7 + 1):
             apN_fc[v, h] = 1
+    # 开始迭代传播
     for h in range(hop_7):
         temppP_fc = defaultdict(lambda: 1)
         temppN_fc = defaultdict(lambda: 1)
+
+        # ---------- 正向激活传播 ----------
         for v in ZP_fc[h]:
-            W_fc = list(G_7.neighbors(v))
+            W_fc = list(G_7.successors(v))
             ZP_fc[h + 1] += W_fc
             for w in W_fc:
                 temppP_fc[w] *= (1 - pP_fc[v, h] * G_7[v][w]['weight'])
@@ -221,8 +230,10 @@ def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
             pP_fc[v, h + 1] = (1 - temppP_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
             for tau_f in range(h + 1, hop_7 + 1):
                 apP_fc[v, tau_f] = apP_fc[v, h] + pP_fc[v, h + 1]
+
+        # ---------- 负向激活传播 ----------
         for v in ZN_fc[h]:
-            W_fc = list(G_7.neighbors(v))
+            W_fc = list(G_7.successors(v))
             ZN_fc[h + 1] += W_fc
             for w in W_fc:
                 temppN_fc[w] *= (1 - pN_fc[v, h] * G_7[v][w]['weight'])
@@ -231,23 +242,15 @@ def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
             pN_fc[v, h + 1] = temppP_fc[v] * (1 - temppN_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
             for tau_f in range(h + 1, hop_7 + 1):
                 apN_fc[v, tau_f] = apN_fc[v, h] + pN_fc[v, h + 1]
+    # 计算负向传播的总体影响
     for u in comAndFS_7:
         effect_fc += apN_fc[u, hop_7]
-    
-#     # === 统计最终被负向激活的节点 ===
-#     neg_activated_nodes = []
-#     for (u, t) in apN_fc:
-#         if t == hop_7 and apN_fc[u, hop_7] > 0:
-#             neg_activated_nodes.append(u)
-# #
-#     num_neg_activated = len(neg_activated_nodes)
-    
-    # =================================
-
+    # 返回总影响值
     return effect_fc
 
 def simulate_propagation(G_sim, positive_seeds, negative_seeds, max_hop):
     """模拟在给定正面种子和负面种子下的信息传播，返回最终负面激活的节点集合。"""
+    G_sim = G_sim.to_directed()
     pos_activated = set(positive_seeds)        # 已被正面激活的节点集合
     neg_activated = set(negative_seeds)        # 已被负面激活的节点集合
     current_pos_frontier = set(positive_seeds) # 当前轮新激活的正面节点
@@ -258,7 +261,7 @@ def simulate_propagation(G_sim, positive_seeds, negative_seeds, max_hop):
         new_neg_frontier = set()
         # 正面信息先传播
         for u in current_pos_frontier:
-            for w in G_sim.neighbors(u):
+            for w in G_sim.successors(u):
                 if w not in pos_activated and w not in neg_activated:
                     prob = G_sim[u][w]['weight']
                     if random.random() < prob:         # 按概率激活
@@ -266,7 +269,7 @@ def simulate_propagation(G_sim, positive_seeds, negative_seeds, max_hop):
                         new_pos_frontier.add(w)
         # 负面信息后传播
         for u in current_neg_frontier:
-            for w in G_sim.neighbors(u):
+            for w in G_sim.successors(u):
                 # 邻居尚未被任何信息激活，且本轮未被正面激活，负面才能尝试
                 if w not in pos_activated and w not in neg_activated and w not in new_pos_frontier:
                     prob = G_sim[u][w]['weight']
@@ -430,6 +433,7 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                             SI[e] = replaceSI[J]
                             J += 1
 
+                # 只保留第一个返回值（影响值）
                 effectS1 = fitness_C_7(S1, G_11, SN_11, comAndFSi_11, hop_11)
                 effectSI = fitness_C_7(SI, G_11, SN_11, comAndFSi_11, hop_11)
 
@@ -462,9 +466,9 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                     one_hop_neighbors = []
                     two_hop_neighbors = []
 
-                    for v in G_11.neighbors(S1[I]):
+                    for v in G_11.successors(S1[I]):
                         one_hop_neighbors.append(v)
-                        for w in G_11.neighbors(v):
+                        for w in G_11.successors(v):
                             two_hop_neighbors.append(w)
                             predecessors[w].append(v)
 
@@ -524,9 +528,9 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                     one_hop_neighbors = []
                     two_hop_neighbors = []
 
-                    for v in G_11.neighbors(S1[I]):
+                    for v in G_11.successors(S1[I]):
                         one_hop_neighbors.append(v)
-                        for w in G_11.neighbors(v):
+                        for w in G_11.successors(v):
                             two_hop_neighbors.append(w)
                             predecessors[w].append(v)
 
@@ -561,7 +565,7 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                     temp = 1
                     rs1 = 0
 
-                    for u in set(S1).intersection(set(G_11.neighbors(S1[I]))):
+                    for u in set(S1).intersection(set(G_11.predecessors(S1[I]))):
                         temp *= (1 - G_11[u][S1[I]]['weight'])
 
                     for t in range(1, hop_11 + 1):
@@ -780,9 +784,8 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                         temp = 1
                         rs1 = 0
 
-                        for u in set(S1).intersection(set(G_11.neighbors(S1[I]))):
+                        for u in set(S1).intersection(set(G_11.predecessors(S1[I]))):
                             temp *= (1 - G_11[u][S1[I]]['weight'])
-
 
                         for t in range(1, hop_11 + 1):
                             rs1 += (1 - temp) * N_prob_11[S1[I], t]
@@ -806,9 +809,9 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                         one_hop_neighbors = []
                         two_hop_neighbors = []
 
-                        for v in G_11.neighbors(S1[I]):
+                        for v in G_11.successors(S1[I]):
                             one_hop_neighbors.append(v)
-                            for w in G_11.neighbors(v):
+                            for w in G_11.successors(v):
                                 two_hop_neighbors.append(w)
                                 predecessors[w].append(v)
 
@@ -843,7 +846,7 @@ def evolution_11(i_11, j_11, maxCommunityEnd_11, max_i_11,
                         temp = 1
                         rs1 = 0
 
-                        for u in set(S1).intersection(set(G_11.neighbors(S1[I]))):
+                        for u in set(S1).intersection(set(G_11.predecessors(S1[I]))):
                             temp *= (1 - G_11[u][S1[I]]['weight'])
 
                         for t in range(1, hop_11 + 1):
@@ -1130,79 +1133,23 @@ def mergeCommunity_12(merge_12, communityList_12, community_k_12, islands_12, is
     return new_islands, new_islandsEffect, new_communityList, new_community_k, \
            s_t_l_12, new_comGenAcc_12, new_comBen_12, comAndSea_12, comAndFS_12, comOrSN_12, comGs_12, gamaCom_12, new_comRes
 
-# def count_negative_activated_nodes(G, SN, hop):
-#     """
-#     在计算结束后统计被负向激活的节点数量
-#     逻辑：重新跑 DPADV（负向传播）并统计 apN(u, hop) > 0 的节点
-#     """
-#     # 1. 需要构建 fitness space（即 FS）
-#     #    FS = Nout(SN, h) \ SN
-#     from collections import deque
-    
-#     # ---- 计算 Nout(SN, h) ----
-#     FS = set()
-#     queue = deque()
-#     for s in SN:
-#         queue.append((s, 0))
-
-#     visited = set(SN)
-
-#     while queue:
-#         v, d = queue.popleft()
-#         if d == hop:
-#             continue
-
-#         for w in G.neighbors(v):
-#             if w not in visited:
-#                 visited.add(w)
-#                 FS.add(w)
-#                 queue.append((w, d + 1))
-
-#     # FS 去掉 SN（保险起见）
-#     FS = FS - set(SN)
-
-#     # ---------------------
-#     # 2. 重新计算负向传播概率（DPADV）
-#     # ---------------------
-#     N_prob = negativeProbability_2(G, SN, FS, hop, all_FP_2=[])
-    
-#     # ---------------------
-#     # 3. 统计 apN(u, hop) > 0 的节点
-#     # ---------------------
-#     neg_activated = []
-#     for u in FS:
-#         # apN 需要累加 t=1..hop
-#         total_an = 0
-#         for t in range(1, hop + 1):
-#             total_an += N_prob.get((u, t), 0)
-        
-#         if total_an > 0:
-#             neg_activated.append(u)
-
-#     return len(neg_activated), neg_activated
-
 
 if __name__ == "__main__":
     sys.stdout = Logger(sys.stdout)  # record log
 
-    SN_size = 50
     SN_dic = {}
-    SN_dic["facebook"] = select_SN("facebook", SN_size)
+    SN_dic["email-Eu-core"] = select_SN("email-Eu-core", 50)
     
-    SN_dic["HR"] = select_SN("HR", SN_size)
+    SN_dic["Email-EuAll"] = select_SN("Email-EuAll", 50)
     
-    SN_dic["BA3000"] = select_SN("BA3000", SN_size)
+    SN_dic["p2p-Gnutella31"] = select_SN("p2p-Gnutella31", 50)
     
-    SN_dic["ER3000"] = select_SN("ER3000", SN_size)
-    
-    SN_dic["RG3000"] = select_SN("RG3000", SN_size)
-    
-    SN_dic["WS3000"] = select_SN("WS3000", SN_size)
+    SN_dic["soc-Epinions1"] = select_SN("soc-Epinions1", 50)
 
-    graphs = ["facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"]
+    graphs = ["email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"]
 
     for file_name in graphs:
-        G = nx.Graph()
+        G = nx.DiGraph()
         with open(f'../../graph/{file_name}.txt') as f:
             for line in f:
                 n, m, w = line.split()
@@ -1221,7 +1168,6 @@ if __name__ == "__main__":
         for k in k_values:
 
             repeats = 3
-        
             current_k_results = []
 
             for r in range(repeats):
@@ -1286,6 +1232,7 @@ if __name__ == "__main__":
                 all_FP = list(set(allNodes) - set(fitnessSpace))  # Calculate in advance
 
                 Gs = G.subgraph(allNodes).copy()  # Modify G to make it smaller
+                Gs = Gs.to_directed()
 
                 communityList = communityDivision_1(Gs, C)
 
@@ -1631,10 +1578,7 @@ if __name__ == "__main__":
 
                 print("bestS:", bestS)
                 print("Optimal fitness value:", bestE)
-                
 
-                # cnt, nodes = count_negative_activated_nodes(G, SN, hop)
-                # print("negative activated nodes: ", num_neg_activated)
                 neg_activated_set = simulate_propagation(Gs, bestS, SN, hop)
                 print(f"Negatively Activated Nodes: {len(neg_activated_set)}")
                 current_k_results.append(len(neg_activated_set))
@@ -1645,17 +1589,14 @@ if __name__ == "__main__":
                 avg_neg_nodes_list.append(0)
 
         try:
-            output_fig_dir = f"../../results/result_figs/"
+            output_fig_dir = "../../results/result_figs"
             if not os.path.exists(output_fig_dir):
                 os.makedirs(output_fig_dir)
             
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_list, marker='o', linestyle='--', label=file_name, color='salmon')
-            
-            # Add value labels for each point
             for x, y in zip(k_values, avg_neg_nodes_list):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-
             plt.title(f'COICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
@@ -1666,3 +1607,4 @@ if __name__ == "__main__":
             print(f"Saved plot to {os.path.join(output_fig_dir, f'COICM_{file_name}_k_trend.png')}")
         except Exception as e:
             print(f"Error plotting: {e}")
+

@@ -27,7 +27,7 @@ class CommunityAgent(BaseAgent):
              # obs_dict["boundary_info"] = f"Boundary Info with {len(obs_dict['boundary_info'])} items"
              pass
 
-        system_prompt = """
+        system_prompt = f"""
         You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm and a strict JSON generator.
         Your goal is to optimize the 'DPADV' (Negative Influence Blocking) for your specific community.
         
@@ -35,28 +35,30 @@ class CommunityAgent(BaseAgent):
         
         MODES:
         A. "adjust_parameters": Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
-        B. "propose_candidate": Propose a list of integer node IDs to be the new seed set. (Size MUST match 'budget')
+        B. "propose_candidate": Propose a list of integer node IDs to be the new seed set. (Size MUST match {observation.budget})
         
         INPUT: JSON state of your community.
         
         OUTPUT RULES:
-        1. Return ONLY valid JSON.
-        2. NO markdown (no ```json).
-        3. NO explanations outside the JSON.
-        4. "action_type" MUST be "adjust_parameters" OR "propose_candidate".
-        5. "reasoning" MUST be a single concise sentence (max 20 words). Keep it brief.
-        6. "candidate_seed_set" size MUST equal the 'budget' value in input.
+        1. Return ONLY valid JSON. Do not output any plain text, markdown blocks, or explanations.
+        2. Start your response with "{{".
+        3. "action_type" MUST be "adjust_parameters" OR "propose_candidate".
+        4. "reasoning" MUST be a single concise sentence (max 20 words). Keep it brief.
+        5. "candidate_seed_set" size MUST equal the {observation.budget} in input.
         
         EXAMPLE OUTPUT:
-        {
+        {{
             "reasoning": "Performance is stagnant, increasing mutation rates.",
             "action_type": "adjust_parameters",
-            "parameters": { "cr1": 0.5, "cr2": 0.5, "beta": 3.0, "alpha": 10.0 },
+            "parameters": 
+            {{ 
+                "cr1": 0.5, "cr2": 0.5, "beta": 3.0, "alpha": 10.0
+            }},
             "candidate_seed_set": null
-        }
+        }}
         """
         
-        user_prompt = f"Current Observation: {json.dumps(obs_dict, default=str)}"
+        user_prompt = f"Current Observation: {json.dumps(obs_dict, default=str)}\n\nRespond with valid JSON only. Start with '{{'."
         
         # 2. Call LLM
         try:
@@ -75,7 +77,7 @@ class CommunityAgent(BaseAgent):
                 if candidates and isinstance(candidates, list):
                     # Auto-fix: Truncate if too long
                     if len(candidates) > observation.budget:
-                        print(f"DEBUG: Truncating candidate set from {len(candidates)} to {observation.budget}")
+                        print(f"Truncating candidate set from {len(candidates)} to {observation.budget}")
                         candidates = candidates[:observation.budget]
                     action.candidate_seed_set = candidates
                 else:

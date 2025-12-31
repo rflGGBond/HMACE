@@ -5,12 +5,12 @@ GRAPH_NAME="facebook"
 TOTAL_BUDGET=20
 NUM_COMMUNITIES=16
 MAX_GEN=20
-T_COMM=5
+T_COMM=4
 
 # LLM Configuration
 # Options: mock, local, openai
 LLM_PROVIDER="local" 
-LLM_MODEL="Qwen2.5-14B" 
+LLM_MODEL="Qwen2.5-7B" 
 API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8" 
 MODEL_ROOT="../../models"
 

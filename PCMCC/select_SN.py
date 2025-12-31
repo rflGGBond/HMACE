@@ -1,7 +1,7 @@
 import networkx as nx
 
 def select_SN(G_name, SN_size):
-    file_path = f"../../graph/{G_name}.txt"
+    file_path = f"../graph/{G_name}.txt"
 
     G = nx.Graph()
 

@@ -38,8 +38,8 @@ class MetaAgent(BaseAgent):
         3. "merge_suggestions": List of pairs to merge (e.g., [[0, 2]]).
         
         OUTPUT RULES:
-        1. Return ONLY valid JSON.
-        2. NO markdown.
+        1. Return ONLY valid JSON. Do not output any plain text or markdown.
+        2. Start your response with '{'.
         3. NO explanations outside JSON.
         4. "reasoning" MUST be concise (max 20 words).
         
@@ -52,7 +52,7 @@ class MetaAgent(BaseAgent):
         }
         """
         
-        user_prompt = f"Current Global Observation: {json.dumps(obs_dict, default=str)}"
+        user_prompt = f"Current Global Observation: {json.dumps(obs_dict, default=str)}\n\nRespond with valid JSON only. Start with '{{'."
         
         # 2. Call LLM
         try:

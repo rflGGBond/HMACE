@@ -56,7 +56,7 @@ class Community:
         self.state.dpadv_history.append(dpadv)
         
         # Maintain history length (e.g., last 20 gens)
-        if len(self.state.dpadv_history) > 20:
+        if len(self.state.dpadv_history) > 5:
             self.state.dpadv_history.pop(0)
 
     def update_parameters(self, params: Dict[str, Any], is_global_baseline: bool = False):

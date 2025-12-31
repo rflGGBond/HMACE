@@ -197,18 +197,16 @@ class LLMClient:
             "do_sample": True,
             "temperature": 0.8,
             "top_p": 0.9,
+            "repetition_penalty": 1.1,
+            "return_full_text": False,
         }
         
         outputs = self.pipeline(prompt, **gen_kwargs)
         generated_text = outputs[0]["generated_text"]
         
         # Extract the assistant's response. 
-        # If apply_chat_template was used, the prompt is part of the output, we need to strip it.
-        # However, pipeline behavior varies. Let's try to extract cleanly.
-        if generated_text.startswith(prompt):
-            response = generated_text[len(prompt):].strip()
-        else:
-            response = generated_text
+        # Since return_full_text=False, generated_text is just the new content.
+        response = generated_text.strip()
 
         # If JSON is requested, try to ensure valid JSON (basic check)
         if response_format == "json":

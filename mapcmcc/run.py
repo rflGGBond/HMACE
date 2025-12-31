@@ -109,7 +109,7 @@ def main():
                 
             # B. Meta Agent
             if meta_agent:
-                # obs = env.get_global_observation()
+                obs = env.get_global_observation()
                 # Mock
                 meta_obs = MetaObservation(
                     current_generation=gen,
