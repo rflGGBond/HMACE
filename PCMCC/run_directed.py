@@ -1,5 +1,7 @@
 from select_SN import select_SN
 import matplotlib.pyplot as plt
+from datetime import datetime
+import random
 import re
 import os, sys
 import time
@@ -12,15 +14,20 @@ import networkx as nx
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
+import argparse
+
+SEED = 42
+random.seed(SEED)
 
 # log recorder
 class Logger(object):
 
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/directed"  # folder 
+        output_dir = "../results/logs" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        log_name = "log_20251231.txt"
+        current_date = datetime.now().strftime("%Y%m%d%H%M%S")
+        log_name = f"log_{current_date}.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -248,41 +255,73 @@ def fitness_C_7(seed_7, G_7, SN_7, comAndFS_7, hop_7):
     # 返回总影响值
     return effect_fc
 
-def simulate_propagation(G_sim, positive_seeds, negative_seeds, max_hop):
-    """模拟在给定正面种子和负面种子下的信息传播，返回最终负面激活的节点集合。"""
-    G_sim = G_sim.to_directed()
-    pos_activated = set(positive_seeds)        # 已被正面激活的节点集合
-    neg_activated = set(negative_seeds)        # 已被负面激活的节点集合
-    current_pos_frontier = set(positive_seeds) # 当前轮新激活的正面节点
-    current_neg_frontier = set(negative_seeds) # 当前轮新激活的负面节点
-    # 逐步扩散最多 max_hop 轮
-    for h in range(max_hop):
-        new_pos_frontier = set()
-        new_neg_frontier = set()
-        # 正面信息先传播
-        for u in current_pos_frontier:
-            for w in G_sim.successors(u):
-                if w not in pos_activated and w not in neg_activated:
-                    prob = G_sim[u][w]['weight']
-                    if random.random() < prob:         # 按概率激活
-                        pos_activated.add(w)
-                        new_pos_frontier.add(w)
-        # 负面信息后传播
-        for u in current_neg_frontier:
-            for w in G_sim.successors(u):
-                # 邻居尚未被任何信息激活，且本轮未被正面激活，负面才能尝试
-                if w not in pos_activated and w not in neg_activated and w not in new_pos_frontier:
-                    prob = G_sim[u][w]['weight']
+def run_diffusion_model(G, S_P, S_N, model='COICM'):
+    """
+    Simulate the diffusion process where positive and negative information propagate simultaneously.
+    
+    Rules:
+    - Nodes have 3 states: Positive, Negative, Non-activated.
+    - Initial: S_P are Positive, S_N are Negative.
+    - Propagation: Activated nodes attempt to activate neighbors.
+    - Conflict: If a node is activated by both Positive and Negative in the same step, Positive wins.
+    - Termination: No new nodes activated.
+    - Models:
+        - COICM: P_P = P_N = edge weight
+        - MCICM: P_P = 1, P_N = edge weight
+    """
+    pos_activated = set(S_P)
+    neg_activated = set(S_N)
+    
+    pos_frontier = set(S_P)
+    neg_frontier = set(S_N)
+    
+    while pos_frontier or neg_frontier:
+        next_pos_frontier = set()
+        next_neg_frontier = set()
+        
+        # Potential activations for this step
+        potential_pos_activations = set()
+        potential_neg_activations = set()
+        
+        # 1. Determine all potential positive activations
+        for u in pos_frontier:
+            for v in G.neighbors(u):
+                if v not in pos_activated and v not in neg_activated:
+                    weight = G[u][v]['weight']
+                    prob = 1.0 if model == 'MCICM' else weight
                     if random.random() < prob:
-                        neg_activated.add(w)
-                        new_neg_frontier.add(w)
-        # 更新当前激活前沿
-        current_pos_frontier = new_pos_frontier
-        current_neg_frontier = new_neg_frontier
-        # 若没有新激活节点，提前结束传播
-        if not current_pos_frontier and not current_neg_frontier:
-            break
-    return neg_activated
+                        potential_pos_activations.add(v)
+        
+        # 2. Determine all potential negative activations
+        for u in neg_frontier:
+            for v in G.neighbors(u):
+                if v not in pos_activated and v not in neg_activated:
+                    weight = G[u][v]['weight']
+                    if random.random() < weight:
+                        potential_neg_activations.add(v)
+        
+        # 3. Resolve conflicts (Positive Priority)
+        # If v is in potential_pos, it becomes positive regardless of potential_neg
+        for v in potential_pos_activations:
+            pos_activated.add(v)
+            next_pos_frontier.add(v)
+            
+        # If v is in potential_neg BUT NOT in potential_pos, it becomes negative
+        for v in potential_neg_activations:
+            if v not in potential_pos_activations:
+                neg_activated.add(v)
+                next_neg_frontier.add(v)
+        
+        pos_frontier = next_pos_frontier
+        neg_frontier = next_neg_frontier
+        
+    return len(neg_activated)
+
+def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=50):
+    total_neg_activated = 0
+    for _ in range(runs):
+        total_neg_activated += run_diffusion_model(G, S_P, S_N, model)
+    return total_neg_activated / runs
 
 def outer_8(effect_8, i_8, j_8, Ni_8):
     def done(res, *args, **kwargs):
@@ -1135,6 +1174,13 @@ def mergeCommunity_12(merge_12, communityList_12, community_k_12, islands_12, is
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run directed graph simulation")
+    parser.add_argument("--k", type=int, nargs="+", default=[20, 110, 200], help="List of k values")
+    parser.add_argument("--repeats", type=int, default=3, help="Number of repeats")
+    parser.add_argument("--graphs", type=str, nargs="+", default=["email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"], help="List of graph names")
+    parser.add_argument("--mc_runs", type=int, default=50, help="Number of Monte Carlo runs for evaluation")
+    args = parser.parse_args()
+
     sys.stdout = Logger(sys.stdout)  # record log
 
     SN_dic = {}
@@ -1146,11 +1192,11 @@ if __name__ == "__main__":
     
     SN_dic["soc-Epinions1"] = select_SN("soc-Epinions1", 50)
 
-    graphs = ["email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"]
+    graphs = args.graphs
 
     for file_name in graphs:
         G = nx.DiGraph()
-        with open(f'../../graph/{file_name}.txt') as f:
+        with open(f'../graph/{file_name}.txt') as f:
             for line in f:
                 n, m, w = line.split()
                 n = int(n)
@@ -1162,13 +1208,15 @@ if __name__ == "__main__":
 
         SN = copy.deepcopy(SN_dic[file_name])
 
-        k_values = [20, 110, 200]
-        avg_neg_nodes_list = []
+        k_values = args.k
+        avg_neg_nodes_list_coicm = []
+        avg_neg_nodes_list_mcicm = []
 
         for k in k_values:
 
-            repeats = 3
-            current_k_results = []
+            repeats = args.repeats
+            current_k_results_coicm = []
+            current_k_results_mcicm = []
 
             for r in range(repeats):
                 print("\nPCMCC", file_name, k, r + 1)
@@ -1579,32 +1627,62 @@ if __name__ == "__main__":
                 print("bestS:", bestS)
                 print("Optimal fitness value:", bestE)
 
-                neg_activated_set = simulate_propagation(Gs, bestS, SN, hop)
-                print(f"Negatively Activated Nodes: {len(neg_activated_set)}")
-                current_k_results.append(len(neg_activated_set))
+                # Monte Carlo Evaluation
+                avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=args.mc_runs)
+                print(f"Average Negatively Activated Nodes (COICM): {avg_neg_activated_coicm}")
+                current_k_results_coicm.append(avg_neg_activated_coicm)
 
-            if current_k_results:
-                avg_neg_nodes_list.append(sum(current_k_results) / len(current_k_results))
+                avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=args.mc_runs)
+                print(f"Average Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm}")
+                current_k_results_mcicm.append(avg_neg_activated_mcicm)
+
+            if current_k_results_coicm:
+                avg_neg_nodes_list_coicm.append(sum(current_k_results_coicm) / len(current_k_results_coicm))
             else:
-                avg_neg_nodes_list.append(0)
+                avg_neg_nodes_list_coicm.append(0)
+            
+            if current_k_results_mcicm:
+                avg_neg_nodes_list_mcicm.append(sum(current_k_results_mcicm) / len(current_k_results_mcicm))
+            else:
+                avg_neg_nodes_list_mcicm.append(0)
 
         try:
-            output_fig_dir = "../../results/result_figs"
-            if not os.path.exists(output_fig_dir):
-                os.makedirs(output_fig_dir)
+            # COICM Plot
+            output_fig_dir_coicm = f"../results/COICM/repeats{args.repeats}_runs{args.mc_runs}"
+            if not os.path.exists(output_fig_dir_coicm):
+                os.makedirs(output_fig_dir_coicm)
             
             plt.figure(figsize=(6, 6))
-            plt.plot(k_values, avg_neg_nodes_list, marker='o', linestyle='--', label=file_name, color='salmon')
-            for x, y in zip(k_values, avg_neg_nodes_list):
+            plt.plot(k_values, avg_neg_nodes_list_coicm, marker='o', linestyle='--', label=file_name, color='salmon')
+            for x, y in zip(k_values, avg_neg_nodes_list_coicm):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
             plt.title(f'COICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)
             plt.tight_layout()
-            plt.savefig(os.path.join(output_fig_dir, f'COICM_{file_name}_k_trend.png'))
+            plt.savefig(os.path.join(output_fig_dir_coicm, f'COICM_{file_name}.png'))
             plt.close()
-            print(f"Saved plot to {os.path.join(output_fig_dir, f'COICM_{file_name}_k_trend.png')}")
+            print(f"Saved COICM plot to {os.path.join(output_fig_dir_coicm, f'COICM_{file_name}.png')}")
+
+            # MCICM Plot
+            output_fig_dir_mcicm = f"../results/MCICM/repeats{args.repeats}_runs{args.mc_runs}"
+            if not os.path.exists(output_fig_dir_mcicm):
+                os.makedirs(output_fig_dir_mcicm)
+            
+            plt.figure(figsize=(6, 6))
+            plt.plot(k_values, avg_neg_nodes_list_mcicm, marker='o', linestyle='--', label=file_name, color='skyblue')
+            for x, y in zip(k_values, avg_neg_nodes_list_mcicm):
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+            plt.title(f'MCICM {file_name}')
+            plt.xlabel('k')
+            plt.ylabel('Negatively Activated Nodes')
+            plt.xticks(k_values)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_fig_dir_mcicm, f'MCICM_{file_name}.png'))
+            plt.close()
+            print(f"Saved MCICM plot to {os.path.join(output_fig_dir_mcicm, f'MCICM_{file_name}.png')}")
+
         except Exception as e:
             print(f"Error plotting: {e}")
 

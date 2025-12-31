@@ -13,6 +13,7 @@ from concurrent.futures import ProcessPoolExecutor
 from select_SN import select_SN
 import matplotlib.pyplot as plt
 from datetime import datetime
+import argparse
 
 SEED = 42
 random.seed(SEED)
@@ -1165,6 +1166,13 @@ def mergeCommunity_12(merge_12, communityList_12, community_k_12, islands_12, is
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run undirected graph simulation")
+    parser.add_argument("--k", type=int, nargs="+", default=[20, 110, 200], help="List of k values")
+    parser.add_argument("--repeats", type=int, default=3, help="Number of repeats")
+    parser.add_argument("--graphs", type=str, nargs="+", default=["facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"], help="List of graph names")
+    parser.add_argument("--mc_runs", type=int, default=50, help="Number of Monte Carlo runs for evaluation")
+    args = parser.parse_args()
+
     sys.stdout = Logger(sys.stdout)  # record log
 
     SN_size = 50
@@ -1181,11 +1189,11 @@ if __name__ == "__main__":
 
     SN_dic["WS3000"] = select_SN("WS3000", SN_size)
 
-    graphs = ["facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"]
+    graphs = args.graphs
 
     for file_name in graphs:
         G = nx.Graph()
-        with open(f'../graph/{file_name}.txt') as f:
+        with open(f'../../graph/{file_name}.txt') as f:
             for line in f:
                 n, m, w = line.split()
                 n = int(n)
@@ -1197,13 +1205,13 @@ if __name__ == "__main__":
 
         SN = copy.deepcopy(SN_dic[file_name])
 
-        k_values = [20, 110, 200]
+        k_values = args.k
         avg_neg_nodes_COICM = []
         avg_neg_nodes_MCICM = []
 
         for k in k_values:
 
-            repeats = 3
+            repeats = args.repeats
         
             current_k_results_COICM = []
             current_k_results_MCICM = []
@@ -1619,13 +1627,13 @@ if __name__ == "__main__":
                 # --- Monte Carlo Simulation for Verification ---
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
-                avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=50)
+                avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (COICM): {avg_neg_activated_coicm}")
                 current_k_results_COICM.append(avg_neg_activated_coicm)
 
                 # Evaluate MCICM
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
-                avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=50)
+                avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm}")
                 current_k_results_MCICM.append(avg_neg_activated_mcicm) 
 
@@ -1641,7 +1649,7 @@ if __name__ == "__main__":
 
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../results/COICM/"
+            output_fig_dir_coicm = f"../results/COICM/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -1665,7 +1673,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/"
+            output_fig_dir_mcicm = f"../results/MCICM/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
