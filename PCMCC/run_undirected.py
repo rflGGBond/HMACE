@@ -24,7 +24,7 @@ class Logger(object):
         output_dir = "../results/logs" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        current_date = datetime.now().strftime("%Y%m%d")
+        current_date = datetime.now().strftime("%Y%m%d%H%M%S")
         log_name = f"log_{current_date}.txt"
         filename = os.path.join(output_dir, log_name)
 
@@ -1181,7 +1181,7 @@ if __name__ == "__main__":
 
     SN_dic["WS3000"] = select_SN("WS3000", SN_size)
 
-    graphs = ["facebook"]
+    graphs = ["facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"]
 
     for file_name in graphs:
         G = nx.Graph()
@@ -1203,7 +1203,7 @@ if __name__ == "__main__":
 
         for k in k_values:
 
-            repeats = 2
+            repeats = 3
         
             current_k_results_COICM = []
             current_k_results_MCICM = []
