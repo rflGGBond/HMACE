@@ -13,11 +13,11 @@ from select_SN import select_SN
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/Max-Degree/" 
+        output_dir = "../../results/logs/Random/" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-        log_name = f"log_{current_date}_max_degree_undirected.txt"
+        log_name = f"log_{current_date}_random_undirected.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -122,9 +122,6 @@ if __name__ == "__main__":
         
         # Candidate nodes for positive seeds (V \ SN)
         candidates = list(set(nodes) - set(SN))
-        
-        # Pre-sort candidates by DEGREE for Max-Degree strategy
-        candidates_sorted = sorted(candidates, key=lambda x: G.degree(x), reverse=True)
 
         k_values = args.k
         avg_neg_nodes_COICM = []
@@ -136,10 +133,10 @@ if __name__ == "__main__":
             current_k_mcicm = []
 
             for r in range(repeats):
-                print(f"\nMax-Degree: {file_name}, k={k}, run={r+1}/{repeats}")
+                print(f"\nRandom: {file_name}, k={k}, run={r+1}/{repeats}")
                 
-                # --- Max-Degree Selection Strategy ---
-                bestS = candidates_sorted[:k]
+                # --- Random Selection Strategy ---
+                bestS = random.sample(candidates, k)
                 print("Selected Seeds:", bestS)
 
                 # Evaluate COICM
@@ -156,10 +153,10 @@ if __name__ == "__main__":
             
             avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
             avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
-        
+
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../../results/MCICM/Random/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -167,7 +164,7 @@ if __name__ == "__main__":
             plt.plot(k_values, avg_neg_nodes_COICM, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_COICM):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-            plt.title(f'COICM Max-Degree {file_name}')
+            plt.title(f'COICM Random {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)
@@ -180,7 +177,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../../results/MCICM/Random/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
@@ -188,7 +185,7 @@ if __name__ == "__main__":
             plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_MCICM):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-            plt.title(f'MCICM Max-Degree {file_name}')
+            plt.title(f'MCICM Random {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)

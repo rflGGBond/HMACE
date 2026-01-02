@@ -1,18 +1,24 @@
-import os, sys
+import os
+import sys
+import random
 import time
 import copy
-import random
+import math
 import networkx as nx
 import matplotlib.pyplot as plt
+import argparse
 from datetime import datetime
 
 # Add path to import select_SN
-sys.path.append('../../PCMCC')
-from select_SN import select_SN
+sys.path.append('../')
+try:
+    from select_SN import select_SN
+except ImportError:
+    pass
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/MCICM/Random/" 
+        output_dir = "../../results/logs/Random/" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -32,7 +38,6 @@ class Logger(object):
 def run_diffusion_model(G, S_P, S_N, model='COICM'):
     """
     Simulate the diffusion process where positive and negative information propagate simultaneously.
-    (Directed Graph Version)
     """
     pos_activated = set(S_P)
     neg_activated = set(S_N)
@@ -50,7 +55,6 @@ def run_diffusion_model(G, S_P, S_N, model='COICM'):
         
         # 1. Determine all potential positive activations
         for u in pos_frontier:
-            # G.neighbors(u) in DiGraph returns successors (out-neighbors)
             for v in G.neighbors(u):
                 if v not in pos_activated and v not in neg_activated:
                     weight = G[u][v]['weight']
@@ -88,6 +92,13 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
     return total_neg_activated / runs
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--k", type=int, nargs="+", default=[20, 110, 200])
+    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--graphs", type=str, nargs="+", default=["email-Eu-core"])
+    parser.add_argument("--mc_runs", type=int, default=100)
+    args = parser.parse_args()
+
     SEED = 42
     random.seed(SEED)
     print(f"Random seed set to {SEED}")
@@ -96,10 +107,9 @@ if __name__ == "__main__":
 
     SN_size = 50
     SN_dic = {}
-    SN_dic["email-Eu-core"] = select_SN("email-Eu-core", SN_size)
-    # Add other graphs if needed
-    
-    graphs = ["email-Eu-core"]
+    graphs = args.graphs
+    for g in graphs:
+        SN_dic[g] = select_SN(g, SN_size)
 
     for file_name in graphs:
         # Use DiGraph for directed graphs
@@ -118,12 +128,12 @@ if __name__ == "__main__":
         # Candidate nodes for positive seeds (V \ SN)
         candidates = list(set(nodes) - set(SN))
 
-        k_values = [20, 110, 200]
+        k_values = args.k
         avg_neg_nodes_COICM = []
         avg_neg_nodes_MCICM = []
 
         for k in k_values:
-            repeats = 3
+            repeats = args.repeats
             current_k_coicm = []
             current_k_mcicm = []
 
@@ -136,16 +146,16 @@ if __name__ == "__main__":
 
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
-                res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=100)
+                res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (COICM): {res_coicm}")
                 current_k_coicm.append(res_coicm)
 
                 # Evaluate MCICM
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
-                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=100)
+                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {res_mcicm}")
                 current_k_mcicm.append(res_mcicm)
-            
+
             avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
             avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
 

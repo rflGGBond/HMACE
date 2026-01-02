@@ -1,23 +1,28 @@
-import os, sys
+import os
+import sys
+import random
 import time
 import copy
-import random
+import math
 import networkx as nx
 import matplotlib.pyplot as plt
-from datetime import datetime
 import argparse
+from datetime import datetime
 
 # Add path to import select_SN
 sys.path.append('../')
-from select_SN import select_SN
+try:
+    from select_SN import select_SN
+except ImportError:
+    pass
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/Max-Degree/" 
+        output_dir = "../../results/logs/DDSE/" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-        log_name = f"log_{current_date}_max_degree_undirected.txt"
+        log_name = f"log_{current_date}_ddse_undirected.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -32,7 +37,7 @@ class Logger(object):
 
 def run_diffusion_model(G, S_P, S_N, model='COICM'):
     """
-    Simulate the diffusion process where positive and negative information propagate simultaneously.
+    Simulate the diffusion process for MCICM.
     """
     pos_activated = set(S_P)
     neg_activated = set(S_N)
@@ -86,6 +91,178 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
         total_neg_activated += run_diffusion_model(G, S_P, S_N, model)
     return total_neg_activated / runs
 
+# --- DDSE Implementation ---
+
+def calculate_edv(G, S):
+    """
+    Calculate Expected Diffusion Value (EDV) for seed set S.
+    EDV(S) = k + sum_{i in N(S)} (1 - (1-p)^tau(i))
+    """
+    k = len(S)
+    
+    neighbor_not_probs = {}
+    
+    for u in S:
+        for v in G.neighbors(u):
+            if v not in S:
+                w = G[u][v]['weight']
+                neighbor_not_probs[v] = neighbor_not_probs.get(v, 1.0) * (1.0 - w)
+                
+    sum_prob = sum(1.0 - p for p in neighbor_not_probs.values())
+    
+    return k + sum_prob
+
+def generate_individual(sorted_nodes, k, i_idx, n_pop):
+    """
+    Generate i-th element of a vector using DDS logic.
+    """
+    individual = set()
+    
+    for j in range(k):
+        window = int(k * (j + 5)) 
+        if window > len(sorted_nodes):
+            window = len(sorted_nodes)
+        
+        added = False
+        for _ in range(10):
+            idx = random.randint(0, window - 1)
+            node = sorted_nodes[idx]
+            if node not in individual:
+                individual.add(node)
+                added = True
+                break
+        
+        if not added:
+            for idx in range(len(sorted_nodes)):
+                node = sorted_nodes[idx]
+                if node not in individual:
+                    individual.add(node)
+                    break
+                    
+    return list(individual)
+
+def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
+    """
+    DDSE Algorithm.
+    """
+    nodes = list(G.nodes())
+    sorted_nodes = sorted(nodes, key=lambda x: G.degree(x), reverse=True)
+    
+    # 1. Initialization
+    population = [] 
+    for _ in range(n_pop):
+        ind = generate_individual(sorted_nodes, k, 0, n_pop)
+        population.append(ind)
+        
+    # Main Loop
+    for g in range(g_max):
+        print(f"  Gen {g+1}/{g_max}")
+        
+        # 2. Mutation
+        mutated_pop = []
+        for i in range(n_pop):
+            original = population[i]
+            mutant = list(original)
+            current_set = set(mutant)
+            
+            for j in range(k):
+                if random.random() < mutation_prob:
+                    window = int(k * (j + 5))
+                    if window > len(sorted_nodes): window = len(sorted_nodes)
+                    new_node = sorted_nodes[random.randint(0, window-1)]
+                    
+                    if new_node not in current_set:
+                        mutant[j] = new_node
+                        current_set.add(new_node)
+            
+            mutated_pop.append(mutant)
+            
+        # 3. Crossover
+        crossover_pop = []
+        for i in range(n_pop):
+            parent = population[i]
+            mutant = mutated_pop[i]
+            child = []
+            child_set = set()
+            
+            for j in range(k):
+                if random.random() < crossover_prob:
+                    val = mutant[j]
+                else:
+                    val = parent[j]
+                    
+                if val in child_set:
+                    if val == mutant[j]: alt = parent[j]
+                    else: alt = mutant[j]
+                    
+                    if alt not in child_set:
+                        val = alt
+                    else:
+                         window = int(k * (j + 5))
+                         while True:
+                             idx = random.randint(0, min(window, len(sorted_nodes)-1))
+                             cand = sorted_nodes[idx]
+                             if cand not in child_set:
+                                 val = cand
+                                 break
+                
+                child.append(val)
+                child_set.add(val)
+            
+            crossover_pop.append(child)
+            
+        # 4. Selection
+        new_population = []
+        for i in range(n_pop):
+            orig = population[i]
+            cross = crossover_pop[i]
+            
+            edv_orig = calculate_edv(G, set(orig))
+            edv_cross = calculate_edv(G, set(cross))
+            
+            if edv_cross > edv_orig:
+                new_population.append(cross)
+            else:
+                new_population.append(orig)
+                
+        population = new_population
+        
+    # Final Selection
+    best_ind = None
+    best_edv = -1
+    
+    for ind in population:
+        edv = calculate_edv(G, set(ind))
+        if edv > best_edv:
+            best_edv = edv
+            best_ind = ind
+            
+    # Local Search
+    best_set = set(best_ind)
+    improved = True
+    while improved:
+        improved = False
+        current_list = list(best_set)
+        
+        for i in range(k):
+            u = current_list[i]
+            for v in G.neighbors(u):
+                if v not in best_set:
+                    new_set = best_set.copy()
+                    new_set.remove(u)
+                    new_set.add(v)
+                    
+                    new_edv = calculate_edv(G, new_set)
+                    if new_edv > best_edv:
+                        best_edv = new_edv
+                        best_set = new_set
+                        best_ind = list(best_set)
+                        improved = True
+                        break 
+            if improved: break
+            
+    return list(best_set)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -120,12 +297,6 @@ if __name__ == "__main__":
         nodes = list(G.nodes)
         SN = copy.deepcopy(SN_dic[file_name])
         
-        # Candidate nodes for positive seeds (V \ SN)
-        candidates = list(set(nodes) - set(SN))
-        
-        # Pre-sort candidates by DEGREE for Max-Degree strategy
-        candidates_sorted = sorted(candidates, key=lambda x: G.degree(x), reverse=True)
-
         k_values = args.k
         avg_neg_nodes_COICM = []
         avg_neg_nodes_MCICM = []
@@ -136,11 +307,17 @@ if __name__ == "__main__":
             current_k_mcicm = []
 
             for r in range(repeats):
-                print(f"\nMax-Degree: {file_name}, k={k}, run={r+1}/{repeats}")
+                print(f"\nDDSE: {file_name}, k={k}, run={r+1}/{repeats}")
                 
-                # --- Max-Degree Selection Strategy ---
-                bestS = candidates_sorted[:k]
-                print("Selected Seeds:", bestS)
+                # Remove SN nodes from graph passed to DDSE
+                G_temp = G.copy()
+                G_temp.remove_nodes_from(SN)
+                
+                start_time = time.time()
+                bestS = ddse(G_temp, k)
+                end_time = time.time()
+                print(f"Time taken: {end_time - start_time:.2f}s")
+                # print("Selected Seeds:", bestS)
 
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
@@ -153,13 +330,13 @@ if __name__ == "__main__":
                 res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {res_mcicm}")
                 current_k_mcicm.append(res_mcicm)
-            
+
             avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
             avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
-        
+
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../../results/COICM/DDSE/"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -167,7 +344,7 @@ if __name__ == "__main__":
             plt.plot(k_values, avg_neg_nodes_COICM, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_COICM):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-            plt.title(f'COICM Max-Degree {file_name}')
+            plt.title(f'COICM DDSE {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)
@@ -180,7 +357,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../../results/MCICM/DDSE/"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
@@ -188,7 +365,7 @@ if __name__ == "__main__":
             plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_MCICM):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-            plt.title(f'MCICM Max-Degree {file_name}')
+            plt.title(f'MCICM DDSE {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)

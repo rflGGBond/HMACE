@@ -5,9 +5,10 @@ import random
 import networkx as nx
 import matplotlib.pyplot as plt
 from datetime import datetime
+import argparse
 
 # Add path to import select_SN
-sys.path.append('../../PCMCC')
+sys.path.append('../')
 from select_SN import select_SN
 
 class Logger(object):
@@ -87,7 +88,15 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
         total_neg_activated += run_diffusion_model(G, S_P, S_N, model)
     return total_neg_activated / runs
 
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--k", type=int, nargs="+", default=[20, 110, 200])
+    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--graphs", type=str, nargs="+", default=["email-Eu-core"])
+    parser.add_argument("--mc_runs", type=int, default=100)
+    args = parser.parse_args()
+
     SEED = 42
     random.seed(SEED)
     print(f"Random seed set to {SEED}")
@@ -96,10 +105,9 @@ if __name__ == "__main__":
 
     SN_size = 50
     SN_dic = {}
-    SN_dic["email-Eu-core"] = select_SN("email-Eu-core", SN_size)
-    # Add other graphs if needed
-    
-    graphs = ["email-Eu-core"]
+    graphs = args.graphs
+    for g in graphs:
+        SN_dic[g] = select_SN(g, SN_size)
 
     for file_name in graphs:
         # Use DiGraph for directed graphs
@@ -121,12 +129,12 @@ if __name__ == "__main__":
         # Pre-sort candidates by OUT-DEGREE for Max-Degree strategy in Directed Graphs
         candidates_sorted = sorted(candidates, key=lambda x: G.out_degree(x), reverse=True)
 
-        k_values = [20, 110, 200]
+        k_values = args.k
         avg_neg_nodes_COICM = []
         avg_neg_nodes_MCICM = []
 
         for k in k_values:
-            repeats = 3
+            repeats = args.repeats
             current_k_coicm = []
             current_k_mcicm = []
 
@@ -139,13 +147,13 @@ if __name__ == "__main__":
 
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
-                res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=100)
+                res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (COICM): {res_coicm}")
                 current_k_coicm.append(res_coicm)
 
                 # Evaluate MCICM
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
-                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=100)
+                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {res_mcicm}")
                 current_k_mcicm.append(res_mcicm)
             
@@ -154,7 +162,7 @@ if __name__ == "__main__":
 
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/COICM/Max-Degree/"
+            output_fig_dir_coicm = f"../../results/COICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -175,7 +183,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../results/MCICM/Max-Degree/"
+            output_fig_dir_mcicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

@@ -7,9 +7,10 @@ import math
 import networkx as nx
 import matplotlib.pyplot as plt
 from datetime import datetime
+import argparse
 
 # Add path to import select_SN
-sys.path.append('../../PCMCC')
+sys.path.append('../')
 from select_SN import select_SN
 
 class Logger(object):
@@ -346,7 +347,15 @@ def cmia_h(G, S_N, k, theta=1/320):
 
     return S_P
 
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--k", type=int, nargs="+", default=[20, 110, 200])
+    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--graphs", type=str, nargs="+", default=["email-Eu-core"])
+    parser.add_argument("--mc_runs", type=int, default=100)
+    args = parser.parse_args()
+
     SEED = 42
     random.seed(SEED)
     print(f"Random seed set to {SEED}")
@@ -355,14 +364,14 @@ if __name__ == "__main__":
 
     SN_size = 50
     SN_dic = {}
-    SN_dic["facebook"] = select_SN("facebook", SN_size)
-    
-    graphs = ["facebook"]
+    graphs = args.graphs
+    for g in graphs:
+        SN_dic[g] = select_SN(g, SN_size)
 
     for file_name in graphs:
         # Use DiGraph for directed graphs
         G = nx.DiGraph()
-        with open(f'../../../graph/{file_name}.txt') as f:
+        with open(f'../../graph/{file_name}.txt') as f:
             for line in f:
                 n, m, w = line.split()
                 n = int(n)
@@ -373,15 +382,15 @@ if __name__ == "__main__":
         nodes = list(G.nodes)
         SN = copy.deepcopy(SN_dic[file_name])
         
-        k_values = [20, 110, 200]
+        k_values = args.k
         avg_neg_nodes_MCICM = []
 
         for k in k_values:
-            repeats = 3
+            repeats = args.repeats
             current_k_mcicm = []
 
             for r in range(repeats):
-                print(f"\nCMIA-H Baseline (Directed): {file_name}, k={k}, run={r+1}/{repeats}")
+                print(f"\nCMIA-H: {file_name}, k={k}, run={r+1}/{repeats}")
                 
                 start_time = time.time()
                 bestS = cmia_h(G, SN, k)
@@ -390,7 +399,7 @@ if __name__ == "__main__":
 
                 # Evaluate MCICM
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
-                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=100)
+                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {res_mcicm}")
                 current_k_mcicm.append(res_mcicm)
             
@@ -398,7 +407,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../../results/baseline/directed/cmia_h/MCICM/"
+            output_fig_dir_mcicm = f"../../results/MCICM/CMIA-H/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
@@ -406,7 +415,7 @@ if __name__ == "__main__":
             plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_MCICM):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
-            plt.title(f'MCICM CMIA-H (Directed) {file_name}')
+            plt.title(f'MCICM CMIA-H {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(k_values)
