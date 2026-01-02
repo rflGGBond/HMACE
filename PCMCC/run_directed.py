@@ -23,11 +23,11 @@ random.seed(SEED)
 class Logger(object):
 
     def __init__(self, stream=sys.stdout):
-        output_dir = "../results/logs" 
+        output_dir = "../results/logs/PCMCC/" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-        log_name = f"log_{current_date}.txt"
+        log_name = f"log_{current_date}_PCMCC_directed.txt"
         filename = os.path.join(output_dir, log_name)
 
         self.terminal = stream
@@ -1648,7 +1648,7 @@ if __name__ == "__main__":
 
         try:
             # COICM Plot
-            output_fig_dir_coicm = f"../results/COICM/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../results/COICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -1666,7 +1666,7 @@ if __name__ == "__main__":
             print(f"Saved COICM plot to {os.path.join(output_fig_dir_coicm, f'COICM_{file_name}.png')}")
 
             # MCICM Plot
-            output_fig_dir_mcicm = f"../results/MCICM/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../results/MCICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

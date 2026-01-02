@@ -2,8 +2,8 @@
 
 # Default parameters
 K_VALUES="20 110 200"
-REPEATS=3
-MC_RUNS=50
+REPEATS=1
+MC_RUNS=100
 
 # Default graphs for each script
 # Comment out graphs you don't want to run

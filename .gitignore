@@ -1,2 +1,7 @@
 *.png
 results/
+mapcmcc/agents/__pycache__/
+mapcmcc/core/__pycache__/
+mapcmcc/environments/__pycache__/
+mapcmcc/utils/__pycache__/
+PCMCC/__pycache__/
