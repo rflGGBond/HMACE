@@ -8,6 +8,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import argparse
 from datetime import datetime
+from collections import defaultdict
 
 # Add path to import select_SN
 sys.path.append('../')
@@ -93,24 +94,88 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
 
 # --- DDSE Implementation ---
 
-def calculate_edv(G, S):
+def fitness_dpadv(seed, G, SN, relevant_nodes, hop=3):
     """
-    Calculate Expected Diffusion Value (EDV) for seed set S.
-    EDV(S) = k + sum_{i in N(S)} (1 - (1-p)^tau(i))
+    Calculate DPADV (Degree-Penalty-Based Activation Degree Value).
+    Measures expected negative influence spread (to be minimized).
     """
-    k = len(S)
+    effect_fc = 0
+    ZP_fc = []
+    ZN_fc = []
+    ZP_fc.append(list(seed))
+    ZN_fc.append(list(SN))
     
-    neighbor_not_probs = {}
+    for h in range(1, hop + 1):
+        ZP_fc.append([])
+        ZN_fc.append([])
+        
+    pP_fc = defaultdict(lambda: 0)
+    apP_fc = defaultdict(lambda: 0)
+    pN_fc = defaultdict(lambda: 0)
+    apN_fc = defaultdict(lambda: 0)
     
-    for u in S:
-        for v in G.neighbors(u):
-            if v not in S:
-                w = G[u][v]['weight']
-                neighbor_not_probs[v] = neighbor_not_probs.get(v, 1.0) * (1.0 - w)
+    # Initialize probabilities
+    for v in seed:
+        pP_fc[v, 0] = 1
+        for h in range(hop + 1):
+            apP_fc[v, h] = 1
+    for v in SN:
+        pN_fc[v, 0] = 1
+        for h in range(hop + 1):
+            apN_fc[v, h] = 1
+            
+    # Iterative propagation
+    for h in range(hop):
+        temppP_fc = defaultdict(lambda: 1)
+        temppN_fc = defaultdict(lambda: 1)
+
+        # Positive Activation
+        for v in ZP_fc[h]:
+            # Undirected: neighbors
+            W_fc = list(G.neighbors(v))
+            ZP_fc[h + 1] += W_fc
+            for w in W_fc:
+                temppP_fc[w] *= (1 - pP_fc[v, h] * G[v][w]['weight'])
+        ZP_fc[h + 1] = list(set(ZP_fc[h + 1]))
+        
+        for v in ZP_fc[h + 1]:
+            pP_fc[v, h + 1] = (1 - temppP_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
+            for tau_f in range(h + 1, hop + 1):
+                apP_fc[v, tau_f] = apP_fc[v, h] + pP_fc[v, h + 1]
+
+        # Negative Activation
+        for v in ZN_fc[h]:
+            # Undirected: neighbors
+            W_fc = list(G.neighbors(v))
+            ZN_fc[h + 1] += W_fc
+            for w in W_fc:
+                temppN_fc[w] *= (1 - pN_fc[v, h] * G[v][w]['weight'])
+        ZN_fc[h + 1] = list(set(ZN_fc[h + 1]))
+        
+        for v in ZN_fc[h + 1]:
+            pN_fc[v, h + 1] = temppP_fc[v] * (1 - temppN_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
+            for tau_f in range(h + 1, hop + 1):
+                apN_fc[v, tau_f] = apN_fc[v, h] + pN_fc[v, h + 1]
                 
-    sum_prob = sum(1.0 - p for p in neighbor_not_probs.values())
+    # Sum over relevant nodes (or all nodes)
+    # Using simple set of nodes for efficiency if relevant_nodes is large
+    # Or just iterate keys in apN_fc? No, apN_fc stores values for activated nodes.
+    # But we want total expected activation.
+    # Only nodes reached by ZN have non-zero apN?
+    # Yes. So we can sum over all v in ZN_fc structure or just apN_fc keys.
+    # But apN_fc keys include seeds. Seeds have apN=1.
+    # We should sum over relevant nodes.
     
-    return k + sum_prob
+    # Optimization: Iterate only touched nodes
+    touched_nodes = set(apN_fc.keys())
+    # Intersect with relevant_nodes if needed, but relevant_nodes usually is V.
+    
+    for u in touched_nodes:
+        # Check if u is relevant (e.g., not in SN if we exclude source?)
+        # But SN itself is activated.
+        effect_fc += apN_fc[u, hop]
+        
+    return effect_fc
 
 def generate_individual(sorted_nodes, k, i_idx, n_pop):
     """
@@ -141,12 +206,17 @@ def generate_individual(sorted_nodes, k, i_idx, n_pop):
                     
     return list(individual)
 
-def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
+def ddse(G, k, SN, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
     """
-    DDSE Algorithm.
+    DDSE Algorithm with DPADV fitness.
     """
     nodes = list(G.nodes())
-    sorted_nodes = sorted(nodes, key=lambda x: G.degree(x), reverse=True)
+    # Filter out SN from candidates to prevent selecting them as positive seeds
+    valid_nodes = [n for n in nodes if n not in SN]
+    sorted_nodes = sorted(valid_nodes, key=lambda x: G.degree(x), reverse=True)
+    
+    relevant_nodes = nodes
+    hop = 3
     
     # 1. Initialization
     population = [] 
@@ -217,10 +287,11 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
             orig = population[i]
             cross = crossover_pop[i]
             
-            edv_orig = calculate_edv(G, set(orig))
-            edv_cross = calculate_edv(G, set(cross))
+            # Minimize DPADV
+            fit_orig = fitness_dpadv(set(orig), G, SN, relevant_nodes, hop)
+            fit_cross = fitness_dpadv(set(cross), G, SN, relevant_nodes, hop)
             
-            if edv_cross > edv_orig:
+            if fit_cross < fit_orig:
                 new_population.append(cross)
             else:
                 new_population.append(orig)
@@ -229,12 +300,12 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
         
     # Final Selection
     best_ind = None
-    best_edv = -1
+    best_fit = float('inf')
     
     for ind in population:
-        edv = calculate_edv(G, set(ind))
-        if edv > best_edv:
-            best_edv = edv
+        fit = fitness_dpadv(set(ind), G, SN, relevant_nodes, hop)
+        if fit < best_fit:
+            best_fit = fit
             best_ind = ind
             
     # Local Search
@@ -252,9 +323,9 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
                     new_set.remove(u)
                     new_set.add(v)
                     
-                    new_edv = calculate_edv(G, new_set)
-                    if new_edv > best_edv:
-                        best_edv = new_edv
+                    new_fit = fitness_dpadv(new_set, G, SN, relevant_nodes, hop)
+                    if new_fit < best_fit:
+                        best_fit = new_fit
                         best_set = new_set
                         best_ind = list(best_set)
                         improved = True
@@ -314,7 +385,8 @@ if __name__ == "__main__":
                 G_temp.remove_nodes_from(SN)
                 
                 start_time = time.time()
-                bestS = ddse(G_temp, k)
+                # Pass SN to DDSE
+                bestS = ddse(G, k, SN)
                 end_time = time.time()
                 print(f"Time taken: {end_time - start_time:.2f}s")
                 # print("Selected Seeds:", bestS)

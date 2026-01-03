@@ -216,9 +216,11 @@ def crossover_mutation(population, i, cr, mu, sorted_nodes, d_bar, alpha):
         N_set = list(set_P1 - set_Pi)
         M_set = list(set_Pi - set_P1)
         
-        temp_list = list(R)
+        temp_list = list(new_ind_set) # Starts with R
         
-        for t in range(len(N_set)):
+        common_len = min(len(N_set), len(M_set))
+        
+        for t in range(common_len):
             node_N = N_set[t]
             node_M = M_set[t]
             
@@ -226,6 +228,12 @@ def crossover_mutation(population, i, cr, mu, sorted_nodes, d_bar, alpha):
                 temp_list.append(node_N)
             else:
                 temp_list.append(node_M)
+        
+        # Append remaining nodes if sizes differ (handling duplicates case)
+        if len(N_set) > common_len:
+            temp_list.extend(N_set[common_len:])
+        if len(M_set) > common_len:
+            temp_list.extend(M_set[common_len:])
                 
         new_Pi = temp_list
         

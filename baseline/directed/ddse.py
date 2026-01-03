@@ -8,6 +8,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import argparse
 from datetime import datetime
+from collections import defaultdict
 
 # Add path to import select_SN
 sys.path.append('../')
@@ -93,94 +94,88 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
 
 # --- DDSE Implementation ---
 
-def calculate_edv(G, S):
+def fitness_dpadv(seed, G, SN, relevant_nodes, hop=3):
     """
-    Calculate Expected Diffusion Value (EDV) for seed set S.
-    EDV(S) = k + sum_{i in N(S)} (1 - (1-p)^tau(i))
-    where tau(i) is number of links from S to i.
+    Calculate DPADV (Degree-Penalty-Based Activation Degree Value).
+    Measures expected negative influence spread (to be minimized).
     """
-    k = len(S)
+    effect_fc = 0
+    ZP_fc = []
+    ZN_fc = []
+    ZP_fc.append(list(seed))
+    ZN_fc.append(list(SN))
     
-    # Identify neighbors of S (excluding S itself)
-    # and count edges from S to each neighbor
-    neighbor_counts = {}
+    for h in range(1, hop + 1):
+        ZP_fc.append([])
+        ZN_fc.append([])
+        
+    pP_fc = defaultdict(lambda: 0)
+    apP_fc = defaultdict(lambda: 0)
+    pN_fc = defaultdict(lambda: 0)
+    apN_fc = defaultdict(lambda: 0)
     
-    for u in S:
-        for v in G.neighbors(u):
-            if v not in S:
-                neighbor_counts[v] = neighbor_counts.get(v, 0) + 1
-                
-    edv_sum = 0.0
-    # Assuming uniform p for calculation simplicity if weights vary?
-    # Or use actual weights if available?
-    # The formula uses 'p'. Let's assume average weight or just use the weight if unique.
-    # If weights vary per edge, the formula becomes: 1 - prod_{u in S->v} (1 - w_{uv})
-    
-    for v, count in neighbor_counts.items():
-        # Exact calculation using weights
-        prob_not_activated = 1.0
-        # We need to iterate incoming edges from S to v.
-        # Since we only have counts, let's re-iterate to be precise
-        pass
+    # Initialize probabilities
+    for v in seed:
+        pP_fc[v, 0] = 1
+        for h in range(hop + 1):
+            apP_fc[v, h] = 1
+    for v in SN:
+        pN_fc[v, 0] = 1
+        for h in range(hop + 1):
+            apN_fc[v, h] = 1
+            
+    # Iterative propagation
+    for h in range(hop):
+        temppP_fc = defaultdict(lambda: 1)
+        temppN_fc = defaultdict(lambda: 1)
 
-    # Optimization: One pass
-    # Reset neighbor_probs
-    neighbor_not_probs = {}
-    
-    for u in S:
-        for v in G.neighbors(u):
-            if v not in S:
-                w = G[u][v]['weight']
-                neighbor_not_probs[v] = neighbor_not_probs.get(v, 1.0) * (1.0 - w)
-                
-    sum_prob = sum(1.0 - p for p in neighbor_not_probs.values())
-    
-    return k + sum_prob
+        # Positive Activation
+        for v in ZP_fc[h]:
+            # Directed: successors
+            W_fc = list(G.successors(v))
+            ZP_fc[h + 1] += W_fc
+            for w in W_fc:
+                temppP_fc[w] *= (1 - pP_fc[v, h] * G[v][w]['weight'])
+        ZP_fc[h + 1] = list(set(ZP_fc[h + 1]))
+        
+        for v in ZP_fc[h + 1]:
+            pP_fc[v, h + 1] = (1 - temppP_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
+            for tau_f in range(h + 1, hop + 1):
+                apP_fc[v, tau_f] = apP_fc[v, h] + pP_fc[v, h + 1]
 
-def dds_select(sorted_nodes, k, diversity_param=0.3):
-    """
-    Degree Descending Search selection.
-    """
-    # Simply pick a random node within up-bound
-    # up-bound = k * (i + 5) ? From image logic.
-    # Actually, the logic is: for each element i of vector, pick from top range.
-    pass
+        # Negative Activation
+        for v in ZN_fc[h]:
+            # Directed: successors
+            W_fc = list(G.successors(v))
+            ZN_fc[h + 1] += W_fc
+            for w in W_fc:
+                temppN_fc[w] *= (1 - pN_fc[v, h] * G[v][w]['weight'])
+        ZN_fc[h + 1] = list(set(ZN_fc[h + 1]))
+        
+        for v in ZN_fc[h + 1]:
+            pN_fc[v, h + 1] = temppP_fc[v] * (1 - temppN_fc[v]) * (1 - apN_fc[v, h]) * (1 - apP_fc[v, h])
+            for tau_f in range(h + 1, hop + 1):
+                apN_fc[v, tau_f] = apN_fc[v, h] + pN_fc[v, h + 1]
+                
+    # Sum over relevant nodes
+    touched_nodes = set(apN_fc.keys())
+    
+    for u in touched_nodes:
+        effect_fc += apN_fc[u, hop]
+        
+    return effect_fc
 
 def generate_individual(sorted_nodes, k, i_idx, n_pop):
     """
-    Generate i-th element of a vector.
-    up-bound = k * (i_idx + 5) 
-    Wait, up-bound logic in Algorithm 2:
-    up-bound = i + 5 (where i is iteration 1..K)
-    Wait, "up-bound = K*(i+5)" in line 5 of Algo 2?
-    The text says "up-bound = i+5". The image says "up-bound = i+5".
-    Wait, "up-bound = K*(i+5)" is likely for larger range.
-    Let's use a dynamic range.
-    
-    Let's follow Algo 2 logic:
-    For j=1 to k:
-        up_bound = j + 5 # or some scaling factor
-        if up_bound > |V|: up_bound = |V|
-        node = random from sorted_nodes[:up_bound]
-        
-    We also need uniqueness in the set.
+    Generate i-th element of a vector using DDS logic.
     """
     individual = set()
     
-    # Scaling factor to allow exploration
-    # If we only look at top j+5, it's very greedy.
-    # Let's use a wider window for diversity.
-    # Paper might say K*(i+5) implies indices.
-    
     for j in range(k):
-        # Using K*(j+1) + some buffer as window?
-        # Let's try: window size grows.
         window = int(k * (j + 5)) 
         if window > len(sorted_nodes):
             window = len(sorted_nodes)
         
-        # Pick a node not in individual
-        # Try a few times
         added = False
         for _ in range(10):
             idx = random.randint(0, window - 1)
@@ -191,7 +186,6 @@ def generate_individual(sorted_nodes, k, i_idx, n_pop):
                 break
         
         if not added:
-            # Force add next available
             for idx in range(len(sorted_nodes)):
                 node = sorted_nodes[idx]
                 if node not in individual:
@@ -200,17 +194,18 @@ def generate_individual(sorted_nodes, k, i_idx, n_pop):
                     
     return list(individual)
 
-def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
+def ddse(G, k, SN, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
     """
-    DDSE Algorithm.
+    DDSE Algorithm with DPADV fitness.
     """
-    # 0. Pre-sort nodes by degree descending
-    # Directed: Out-degree usually matters for influence
     nodes = list(G.nodes())
     sorted_nodes = sorted(nodes, key=lambda x: G.out_degree(x), reverse=True)
     
+    relevant_nodes = nodes
+    hop = 3
+    
     # 1. Initialization
-    population = [] # List of sets (or lists)
+    population = [] 
     for _ in range(n_pop):
         ind = generate_individual(sorted_nodes, k, 0, n_pop)
         population.append(ind)
@@ -224,25 +219,17 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
         for i in range(n_pop):
             original = population[i]
             mutant = list(original)
-            
-            # Mutate each element with prob f
             current_set = set(mutant)
             
             for j in range(k):
                 if random.random() < mutation_prob:
-                    # Pick new node using DDS
                     window = int(k * (j + 5))
                     if window > len(sorted_nodes): window = len(sorted_nodes)
-                    
                     new_node = sorted_nodes[random.randint(0, window-1)]
                     
-                    # Ensure uniqueness
                     if new_node not in current_set:
                         mutant[j] = new_node
                         current_set.add(new_node)
-                        # We should remove the old node from set, but 'mutant[j]' was overwritten.
-                        # The old node was original[j].
-                        # This logic is slightly loose but okay for set maintenance.
             
             mutated_pop.append(mutant)
             
@@ -260,16 +247,13 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
                 else:
                     val = parent[j]
                     
-                # Ensure uniqueness in child
                 if val in child_set:
-                    # Conflict, pick from other or random
                     if val == mutant[j]: alt = parent[j]
                     else: alt = mutant[j]
                     
                     if alt not in child_set:
                         val = alt
                     else:
-                        # Pick random fresh
                          window = int(k * (j + 5))
                          while True:
                              idx = random.randint(0, min(window, len(sorted_nodes)-1))
@@ -289,10 +273,11 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
             orig = population[i]
             cross = crossover_pop[i]
             
-            edv_orig = calculate_edv(G, set(orig))
-            edv_cross = calculate_edv(G, set(cross))
+            # Minimize DPADV
+            fit_orig = fitness_dpadv(set(orig), G, SN, relevant_nodes, hop)
+            fit_cross = fitness_dpadv(set(cross), G, SN, relevant_nodes, hop)
             
-            if edv_cross > edv_orig:
+            if fit_cross < fit_orig:
                 new_population.append(cross)
             else:
                 new_population.append(orig)
@@ -301,16 +286,15 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
         
     # Final Selection
     best_ind = None
-    best_edv = -1
+    best_fit = float('inf')
     
     for ind in population:
-        edv = calculate_edv(G, set(ind))
-        if edv > best_edv:
-            best_edv = edv
+        fit = fitness_dpadv(set(ind), G, SN, relevant_nodes, hop)
+        if fit < best_fit:
+            best_fit = fit
             best_ind = ind
             
     # Local Search
-    # Try replacing nodes with neighbors
     best_set = set(best_ind)
     improved = True
     while improved:
@@ -319,24 +303,19 @@ def ddse(G, k, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
         
         for i in range(k):
             u = current_list[i]
-            # Neighbors of u (successors or predecessors? Standard LS uses neighbors)
-            # For influence, out-neighbors? Or in-neighbors?
-            # Usually replace u with v where v is "close".
-            # Let's check out-neighbors.
             for v in G.neighbors(u):
                 if v not in best_set:
-                    # Try swap
                     new_set = best_set.copy()
                     new_set.remove(u)
                     new_set.add(v)
                     
-                    new_edv = calculate_edv(G, new_set)
-                    if new_edv > best_edv:
-                        best_edv = new_edv
+                    new_fit = fitness_dpadv(new_set, G, SN, relevant_nodes, hop)
+                    if new_fit < best_fit:
+                        best_fit = new_fit
                         best_set = new_set
-                        best_ind = list(best_set) # Update list representation
+                        best_ind = list(best_set)
                         improved = True
-                        break # Restart loop
+                        break 
             if improved: break
             
     return list(best_set)
@@ -375,15 +354,6 @@ if __name__ == "__main__":
         nodes = list(G.nodes)
         SN = copy.deepcopy(SN_dic[file_name])
         
-        # We need to exclude SN from candidates?
-        # DDSE selects "Influence Maximization" set.
-        # But we are doing blocking. 
-        # If we just run DDSE on G, we find top influencers.
-        # We should ensure we don't pick nodes in SN (the rumor source).
-        # So we should modify G or selection to exclude SN.
-        
-        # Let's filter sorted_nodes to exclude SN
-        
         k_values = args.k
         avg_neg_nodes_COICM = []
         avg_neg_nodes_MCICM = []
@@ -396,21 +366,9 @@ if __name__ == "__main__":
             for r in range(repeats):
                 print(f"\nDDSE: {file_name}, k={k}, run={r+1}/{repeats}")
                 
-                # Exclude SN from selection pool logic inside DDSE?
-                # Easiest way: pass subgraph or modify generate_individual
-                # But DDSE uses global sorting.
-                # We can just check validity.
-                
-                # Re-implement simple exclusion in DDSE call?
-                # Or simply: remove SN nodes from graph passed to DDSE?
-                # If we remove SN, we find best influencers among remaining.
-                # This aligns with finding best blockers.
-                
-                G_temp = G.copy()
-                G_temp.remove_nodes_from(SN)
-                
                 start_time = time.time()
-                bestS = ddse(G_temp, k)
+                # Pass SN to DDSE
+                bestS = ddse(G, k, SN)
                 end_time = time.time()
                 print(f"Time taken: {end_time - start_time:.2f}s")
                 # print("Selected Seeds:", bestS)

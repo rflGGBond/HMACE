@@ -77,7 +77,7 @@ def run_diffusion_model(G, S_P, S_N, model='COICM'):
         
     return len(neg_activated)
 
-def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=50):
+def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=100):
     total_neg_activated = 0
     for _ in range(runs):
         total_neg_activated += run_diffusion_model(G, S_P, S_N, model)
@@ -85,7 +85,7 @@ def monte_carlo_evaluation(G, S_P, S_N, model='COICM', runs=50):
 
 # --- CELF Implementation ---
 
-def celf(G, k, SN, mc_runs_celf=50):
+def celf(G, k, SN, mc_runs_celf=100):
     """
     CELF (Cost-Effective Lazy Forward selection) algorithm.
     Objective: Maximize blocking effect (Minimize Negative Activation).

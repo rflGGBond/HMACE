@@ -263,7 +263,9 @@ def crossover_mutation(population, i, cr, mu, sorted_nodes, d_bar, alpha):
         
         temp_list = list(new_ind_set) # Starts with R
         
-        for t in range(len(N_set)):
+        common_len = min(len(N_set), len(M_set))
+        
+        for t in range(common_len):
             node_N = N_set[t]
             node_M = M_set[t]
             
@@ -271,6 +273,12 @@ def crossover_mutation(population, i, cr, mu, sorted_nodes, d_bar, alpha):
                 temp_list.append(node_N)
             else:
                 temp_list.append(node_M)
+        
+        # Append remaining nodes if sizes differ (handling duplicates case)
+        if len(N_set) > common_len:
+            temp_list.extend(N_set[common_len:])
+        if len(M_set) > common_len:
+            temp_list.extend(M_set[common_len:])
                 
         new_Pi = temp_list
         
@@ -287,7 +295,17 @@ def crossover_mutation(population, i, cr, mu, sorted_nodes, d_bar, alpha):
         if ncn > len(sorted_nodes): ncn = len(sorted_nodes)
         candidates = sorted_nodes[:ncn]
         
-        for t in range(k_size):
+        # Ensure new_Pi has exactly k_size elements
+        while len(new_Pi) < k_size:
+            # Add random unique node from candidates
+            cand = random.choice(candidates)
+            if cand not in new_Pi:
+                new_Pi.append(cand)
+                
+        if len(new_Pi) > k_size:
+            new_Pi = new_Pi[:k_size]
+        
+        for t in range(len(new_Pi)):
             if random.random() < mu:
                 # Replace
                 valid = [n for n in candidates if n not in new_Pi]

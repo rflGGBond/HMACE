@@ -9,9 +9,9 @@ MC_RUNS=100
 # Comment out graphs you don't want to run
 DIRECTED_GRAPHS=""
 DIRECTED_GRAPHS="$DIRECTED_GRAPHS email-Eu-core"
-DIRECTED_GRAPHS="$DIRECTED_GRAPHS Email-EuAll"
-DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella31"
-DIRECTED_GRAPHS="$DIRECTED_GRAPHS soc-Epinions1"
+# DIRECTED_GRAPHS="$DIRECTED_GRAPHS Email-EuAll"
+# DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella31"
+# DIRECTED_GRAPHS="$DIRECTED_GRAPHS soc-Epinions1"
 
 echo "Running Directed Baseline Experiments"
 echo "K Values: $K_VALUES"
@@ -21,25 +21,25 @@ echo "Graphs: $DIRECTED_GRAPHS"
 echo "--------------------------------"
 
 if [ -n "$DIRECTED_GRAPHS" ]; then
-    # Random
-    echo "Running Random Baseline..."
-    python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # Random
+    # echo "Running Random Baseline..."
+    # python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
     
-    # Max-Degree
-    echo "Running Max-Degree Baseline..."
-    python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # Max-Degree
+    # echo "Running Max-Degree Baseline..."
+    # python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
     
     # # CMIA-H
     # echo "Running CMIA-H Baseline..."
-    # python3 cmia_h.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # python3 cmia_h_gpu.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # IBMM
-    echo "Running IBMM Baseline..."
-    python3 ibmm.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # IBMM
+    # echo "Running IBMM Baseline..."
+    # python3 ibmm.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # DDSE
-    echo "Running DDSE Baseline..."
-    python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # DDSE
+    # echo "Running DDSE Baseline..."
+    # python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # SEA-PEA
     echo "Running SEA-PEA Baseline..."

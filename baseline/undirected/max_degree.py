@@ -159,7 +159,7 @@ if __name__ == "__main__":
         
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/MCICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../../results/COICM/Max-Degree/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
