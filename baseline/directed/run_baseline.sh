@@ -41,13 +41,13 @@ if [ -n "$DIRECTED_GRAPHS" ]; then
     # echo "Running DDSE Baseline..."
     # python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # SEA-PEA
-    echo "Running SEA-PEA Baseline..."
-    python3 sea_pea.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # SEA-PEA
+    # echo "Running SEA-PEA Baseline..."
+    # python3 sea_pea.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # CELF
-    echo "Running CELF Baseline..."
-    python3 celf.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # CELF
+    # echo "Running CELF Baseline..."
+    # python3 celf.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 else
     echo "No graphs selected."
 fi

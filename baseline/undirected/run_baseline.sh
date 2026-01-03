@@ -46,10 +46,6 @@ if [ -n "$UNDIRECTED_GRAPHS" ]; then
     # SEA-PEA
     echo "Running SEA-PEA Baseline..."
     python3 sea_pea.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
-
-    # # CELF
-    # echo "Running CELF Baseline..."
-    # python3 celf.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 else
     echo "No graphs selected."
 fi
