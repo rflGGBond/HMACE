@@ -254,7 +254,7 @@ if __name__ == "__main__":
 
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/COICM/CELF/"
+            output_fig_dir_coicm = f"../../results/COICM/CELF/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -275,7 +275,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../results/MCICM/CELF/"
+            output_fig_dir_mcicm = f"../../results/MCICM/CELF/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
