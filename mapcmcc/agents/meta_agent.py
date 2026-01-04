@@ -57,7 +57,7 @@ class MetaAgent(BaseAgent):
         # 2. Call LLM
         try:
             response_str = self.llm_client.get_completion(system_prompt, user_prompt)
-            print(f"LLM Response: {response_str}")  # 输出LLM的原始响应
+            print(f"Meta Agent Response: {response_str}")  # 输出Meta Agent的原始响应
             response_json = json.loads(response_str)
             
             # 3. Parse Response to Action

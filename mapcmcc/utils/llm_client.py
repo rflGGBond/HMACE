@@ -193,9 +193,9 @@ class LLMClient:
 
         # Generation parameters
         gen_kwargs = {
-            "max_new_tokens": 512,
+            "max_new_tokens": 1024,
             "do_sample": True,
-            "temperature": 0.8,
+            "temperature": 0.75,
             "top_p": 0.9,
             "repetition_penalty": 1.1,
             "return_full_text": False,

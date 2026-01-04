@@ -46,6 +46,157 @@ def sample(l1, w1, k):
 
     return rs
 
+def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
+    """
+    Simplified interface for local search, operating on standard lists.
+    Returns the optimized seed set S1.
+    """
+    S1 = list(S1) # Ensure list
+    budget = len(S1)
+    
+    while True:
+        discount_P_score_diff = []
+        
+        # 1. Calculate contribution for each node in S1
+        for I in range(budget):
+            rs = 0
+            predecessors = defaultdict(lambda: [])
+            one_hop_neighbors = []
+            two_hop_neighbors = []
+
+            for v in G.neighbors(S1[I]):
+                one_hop_neighbors.append(v)
+                for w in G.neighbors(v):
+                    two_hop_neighbors.append(w)
+                    predecessors[w].append(v)
+
+            oneAndF = set(one_hop_neighbors).intersection(set(com_and_fs)) - set(S1)
+            two_hop_neighbors = set(two_hop_neighbors).intersection(set(com_and_fs)) - set(S1)
+            twoAndOne = two_hop_neighbors.intersection(oneAndF)
+            two_one = two_hop_neighbors - oneAndF
+
+            for t in range(1, hop + 1):
+                rs += N_prob.get((S1[I], t), 0)
+
+            for v in oneAndF:
+                for t in range(1, hop + 1):
+                    rs += G[S1[I]][v]['weight'] * N_prob.get((v, t), 0)
+
+            for w in twoAndOne:
+                temp_p = 1
+                for v in set(predecessors[w]):
+                    temp_p *= (1 - G[S1[I]][v]['weight'] * G[v][w]['weight'])
+                for t in range(2, hop + 1):
+                    rs += (1 - G[S1[I]][w]['weight']) * (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
+
+            for w in two_one:
+                temp_p = 1
+                for v in set(predecessors[w]):
+                    temp_p *= (1 - G[S1[I]][v]['weight'] * G[v][w]['weight'])
+                for t in range(2, hop + 1):
+                    rs += (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
+
+            temp = 1
+            rs1 = 0
+            
+            # Use predecessors if directed, neighbors if undirected
+            incoming_neighbors = G.predecessors(S1[I]) if G.is_directed() else G.neighbors(S1[I])
+            
+            for u in set(S1).intersection(set(incoming_neighbors)):
+                temp *= (1 - G[u][S1[I]]['weight'])
+
+            for t in range(1, hop + 1):
+                rs1 += (1 - temp) * N_prob.get((S1[I], t), 0)
+
+            for v in oneAndF:
+                for t in range(2, hop + 1):
+                    rs1 += (1 - temp) * G[S1[I]][v]['weight'] * N_prob.get((v, t), 0)
+
+            discount_P_score_diff.append(rs - rs1)
+
+        # 2. Find worst node to replace
+        I_worst = discount_P_score_diff.index(min(discount_P_score_diff))
+        Sbest = copy.deepcopy(S1)
+        
+        replace_discount_P_score_diff = {}
+        
+        # 3. Try replacing worst node
+        for nn in (set(gama_com) - set(Sbest)):
+            S1[I_worst] = nn # Tentative replacement
+
+            rs = 0
+            predecessors = defaultdict(lambda: [])
+            one_hop_neighbors = []
+            two_hop_neighbors = []
+
+            for v in G.neighbors(S1[I_worst]):
+                one_hop_neighbors.append(v)
+                for w in G.neighbors(v):
+                    two_hop_neighbors.append(w)
+                    predecessors[w].append(v)
+
+            oneAndF = set(one_hop_neighbors).intersection(set(com_and_fs)) - set(S1)
+            two_hop_neighbors = set(two_hop_neighbors).intersection(set(com_and_fs)) - set(S1)
+            twoAndOne = two_hop_neighbors.intersection(oneAndF)
+            two_one = two_hop_neighbors - oneAndF
+
+            for t in range(1, hop + 1):
+                rs += N_prob.get((S1[I_worst], t), 0)
+
+            for v in oneAndF:
+                for t in range(1, hop + 1):
+                    rs += G[S1[I_worst]][v]['weight'] * N_prob.get((v, t), 0)
+
+            for w in twoAndOne:
+                temp_p = 1
+                for v in set(predecessors[w]):
+                    temp_p *= (1 - G[S1[I_worst]][v]['weight'] * G[v][w]['weight'])
+                for t in range(2, hop + 1):
+                    rs += (1 - G[S1[I_worst]][w]['weight']) * (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
+
+            for w in two_one:
+                temp_p = 1
+                for v in set(predecessors[w]):
+                    temp_p *= (1 - G[S1[I_worst]][v]['weight'] * G[v][w]['weight'])
+                for t in range(2, hop + 1):
+                    rs += (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
+
+            temp = 1
+            rs1 = 0
+            
+            incoming_neighbors = G.predecessors(S1[I_worst]) if G.is_directed() else G.neighbors(S1[I_worst])
+            
+            for u in set(S1).intersection(set(incoming_neighbors)):
+                temp *= (1 - G[u][S1[I_worst]]['weight'])
+
+            for t in range(1, hop + 1):
+                rs1 += (1 - temp) * N_prob.get((S1[I_worst], t), 0)
+
+            for v in oneAndF:
+                for t in range(2, hop + 1):
+                    rs1 += (1 - temp) * G[S1[I_worst]][v]['weight'] * N_prob.get((v, t), 0)
+
+            replace_discount_P_score_diff[nn] = rs - rs1
+
+        S1[I_worst] = -1 # Reset
+        rmax = discount_P_score_diff[I_worst]
+        rn = Sbest[I_worst]
+
+        for nn in list(set(gama_com) - set(Sbest)):
+            if replace_discount_P_score_diff[nn] >= rmax:
+                rmax = replace_discount_P_score_diff[nn]
+                rn = nn
+
+        S1[I_worst] = rn
+
+        # 4. Check if improvement occurred (Simple check: if we picked a new node)
+        # Note: In original code, it recalculates fitness to be sure.
+        # Here we just check if S1 changed.
+        if S1 == Sbest:
+            break
+            
+    return S1
+
 def initialize_population(community_id, subpop_id, Ni, com_and_sea, budget):
     """
     Initializes population for a community subpopulation.
@@ -258,7 +409,11 @@ def _local_search_step(
 
             temp = 1
             rs1 = 0
-            for u in set(S1).intersection(set(G.neighbors(S1[I]))):
+            
+            # Use predecessors if directed, neighbors if undirected
+            incoming_neighbors = G.predecessors(S1[I]) if G.is_directed() else G.neighbors(S1[I])
+            
+            for u in set(S1).intersection(set(incoming_neighbors)):
                 temp *= (1 - G[u][S1[I]]['weight'])
 
             for t in range(1, hop + 1):
@@ -298,37 +453,41 @@ def _local_search_step(
             two_one = two_hop_neighbors - oneAndF
 
             for t in range(1, hop + 1):
-                rs += N_prob[S1[I_worst], t]
+                rs += N_prob.get((S1[I_worst], t), 0)
 
             for v in oneAndF:
                 for t in range(1, hop + 1):
-                    rs += G[S1[I_worst]][v]['weight'] * N_prob[v, t]
+                    rs += G[S1[I_worst]][v]['weight'] * N_prob.get((v, t), 0)
 
             for w in twoAndOne:
                 temp_p = 1
                 for v in set(predecessors[w]):
                     temp_p *= (1 - G[S1[I_worst]][v]['weight'] * G[v][w]['weight'])
                 for t in range(2, hop + 1):
-                    rs += (1 - G[S1[I_worst]][w]['weight']) * (1 - temp_p) * (1 - N_prob[w, 1]) * N_prob[w, t]
+                    rs += (1 - G[S1[I_worst]][w]['weight']) * (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
 
             for w in two_one:
                 temp_p = 1
                 for v in set(predecessors[w]):
                     temp_p *= (1 - G[S1[I_worst]][v]['weight'] * G[v][w]['weight'])
                 for t in range(2, hop + 1):
-                    rs += (1 - temp_p) * (1 - N_prob[w, 1]) * N_prob[w, t]
+                    rs += (1 - temp_p) * (1 - N_prob.get((w, 1), 0)) * N_prob.get((w, t), 0)
 
             temp = 1
             rs1 = 0
-            for u in set(S1).intersection(set(G.neighbors(S1[I_worst]))):
+            
+            # Use predecessors if directed, neighbors if undirected
+            incoming_neighbors = G.predecessors(S1[I_worst]) if G.is_directed() else G.neighbors(S1[I_worst])
+            
+            for u in set(S1).intersection(set(incoming_neighbors)):
                 temp *= (1 - G[u][S1[I_worst]]['weight'])
 
             for t in range(1, hop + 1):
-                rs1 += (1 - temp) * N_prob[S1[I_worst], t]
+                rs1 += (1 - temp) * N_prob.get((S1[I_worst], t), 0)
 
             for v in oneAndF:
                 for t in range(2, hop + 1):
-                    rs1 += (1 - temp) * G[S1[I_worst]][v]['weight'] * N_prob[v, t]
+                    rs1 += (1 - temp) * G[S1[I_worst]][v]['weight'] * N_prob.get((v, t), 0)
 
             replace_discount_P_score_diff[nn] = rs - rs1
 

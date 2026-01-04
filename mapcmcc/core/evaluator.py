@@ -169,53 +169,76 @@ class DPADVEvaluator:
         return effect_fc
 
     @staticmethod
-    def simulate_propagation(G_sim, positive_seeds, negative_seeds, max_hop):
+    def simulate_propagation(G, S_P, S_N, model='COICM'):
         """
-        Simulates information propagation with given positive and negative seeds.
-        Returns the set of nodes negatively activated.
-        """
-        pos_activated = set(positive_seeds)        
-        neg_activated = set(negative_seeds)        
-        current_pos_frontier = set(positive_seeds) 
-        current_neg_frontier = set(negative_seeds) 
+        Simulate the diffusion process where positive and negative information propagate simultaneously.
+        Matches PCMCC logic (Synchronous update, Positive Priority, Exhaustive).
         
-        for h in range(max_hop):
-            new_pos_frontier = set()
-            new_neg_frontier = set()
+        Rules:
+        - Nodes have 3 states: Positive, Negative, Non-activated.
+        - Initial: S_P are Positive, S_N are Negative.
+        - Propagation: Activated nodes attempt to activate neighbors.
+        - Conflict: If a node is activated by both Positive and Negative in the same step, Positive wins.
+        - Termination: No new nodes activated.
+        - Models:
+            - COICM: P_P = P_N = edge weight
+            - MCICM: P_P = 1, P_N = edge weight
+        """
+        pos_activated = set(S_P)
+        neg_activated = set(S_N)
+        
+        pos_frontier = set(S_P)
+        neg_frontier = set(S_N)
+        
+        while pos_frontier or neg_frontier:
+            next_pos_frontier = set()
+            next_neg_frontier = set()
             
-            # Positive propagation first
-            for u in current_pos_frontier:
-                for w in G_sim.neighbors(u):
-                    if w not in pos_activated and w not in neg_activated:
-                        prob = G_sim[u][w]['weight']
-                        if random.random() < prob:
-                            pos_activated.add(w)
-                            new_pos_frontier.add(w)
-                            
-            # Negative propagation second
-            for u in current_neg_frontier:
-                for w in G_sim.neighbors(u):
-                    if w not in pos_activated and w not in neg_activated and w not in new_pos_frontier:
-                        prob = G_sim[u][w]['weight']
-                        if random.random() < prob:
-                            neg_activated.add(w)
-                            new_neg_frontier.add(w)
-                            
-            current_pos_frontier = new_pos_frontier
-            current_neg_frontier = new_neg_frontier
+            # Potential activations for this step
+            potential_pos_activations = set()
+            potential_neg_activations = set()
             
-            if not current_pos_frontier and not current_neg_frontier:
-                break
+            # 1. Determine all potential positive activations
+            for u in pos_frontier:
+                for v in G.neighbors(u):
+                    if v not in pos_activated and v not in neg_activated:
+                        weight = G[u][v]['weight']
+                        prob = 1.0 if model == 'MCICM' else weight
+                        if random.random() < prob:
+                            potential_pos_activations.add(v)
+            
+            # 2. Determine all potential negative activations
+            for u in neg_frontier:
+                for v in G.neighbors(u):
+                    if v not in pos_activated and v not in neg_activated:
+                        weight = G[u][v]['weight']
+                        if random.random() < weight:
+                            potential_neg_activations.add(v)
+            
+            # 3. Resolve conflicts (Positive Priority)
+            # If v is in potential_pos, it becomes positive regardless of potential_neg
+            for v in potential_pos_activations:
+                pos_activated.add(v)
+                next_pos_frontier.add(v)
                 
-        return neg_activated
+            # If v is in potential_neg BUT NOT in potential_pos, it becomes negative
+            for v in potential_neg_activations:
+                if v not in potential_pos_activations:
+                    neg_activated.add(v)
+                    next_neg_frontier.add(v)
+            
+            pos_frontier = next_pos_frontier
+            neg_frontier = next_neg_frontier
+            
+        return len(neg_activated)
 
     @staticmethod
-    def get_activated_node_count(seed_set, G, SN, max_hop=2, simulations=3):
+    def get_activated_node_count(seed_set, G, SN, runs=50, model='COICM'):
         """
         Calculates the average number of negatively activated nodes by running multiple simulations.
         """
         total_activated = 0
-        for _ in range(simulations):
-            neg_set = DPADVEvaluator.simulate_propagation(G, seed_set, SN, max_hop)
-            total_activated += len(neg_set)
-        return total_activated / simulations
+        for _ in range(runs):
+            count = DPADVEvaluator.simulate_propagation(G, seed_set, SN, model)
+            total_activated += count
+        return total_activated / runs

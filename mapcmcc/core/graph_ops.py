@@ -10,11 +10,12 @@ def detect_communities(G, num_communities):
     Refactored from communityDivision_1.
     """
     c_G = G.copy()
-    c_g = copy.deepcopy(ig.Graph.TupleList(list(c_G.edges(data='weight')), directed=False, edge_attrs=['weight']))
+    is_directed = G.is_directed()
+    c_g = copy.deepcopy(ig.Graph.TupleList(list(c_G.edges(data='weight')), directed=is_directed, edge_attrs=['weight']))
     c_part = leidenalg.find_partition(c_g, leidenalg.ModularityVertexPartition, weights=c_g.es['weight'],
                                       n_iterations=-1)
     
-    # print(f"Modularity: {c_part.modularity}\n")
+    print(f"Modularity: {c_part.modularity}\n")
 
     rs_part = []
     # Using regex to parse the partition output string (as in original code)
@@ -41,7 +42,7 @@ def detect_communities(G, num_communities):
             max_indices = sorted(range(len(lengths)), key=lambda k: lengths[k])[-1]
             a_G = G.subgraph(rs_part[max_indices]).copy()
             a_g = copy.deepcopy(
-                ig.Graph.TupleList(list(a_G.edges(data='weight')), directed=False, edge_attrs=['weight']))
+                ig.Graph.TupleList(list(a_G.edges(data='weight')), directed=is_directed, edge_attrs=['weight']))
             a_part = leidenalg.find_partition(a_g, leidenalg.ModularityVertexPartition, weights=a_g.es['weight'],
                                               n_iterations=-1)
             a_rs_part = []

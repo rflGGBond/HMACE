@@ -15,6 +15,7 @@ class CommunityObservation:
     top_k_score_nodes: List[Dict[str, Any]]
     current_seed_set: List[int]
     boundary_info: Dict[str, Any]
+    parameters: Dict[str, float]
     global_dpadv: float
 
 @dataclass

@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import argparse
+import matplotlib.pyplot as plt
 from typing import List, Dict
 
 # Add the parent directory to sys.path to allow imports if running as script
@@ -12,30 +13,33 @@ from mapcmcc.agents.community_agent import CommunityAgent
 from mapcmcc.agents.meta_agent import MetaAgent
 from mapcmcc.utils.types import CommunityObservation, MetaObservation
 from mapcmcc.utils.llm_client import LLMClient
-from utils.select_SN import select_SN
+from mapcmcc.utils.select_SN import select_SN
+from mapcmcc.core.evaluator import DPADVEvaluator
+
+# Define graph types based on PCMCC reference
+DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"}
+UNDIRECTED_GRAPHS = {"facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"}
 
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run MAPCMCC")
-    parser.add_argument("--graph_name", type=str, default="facebook", help="Name of the graph file (without extension)")
-    parser.add_argument("--total_budget", type=int, default=50, help="Total budget")
+    parser.add_argument("--graphs", type=str, nargs='+', default=["facebook"], help="List of graph names to run (e.g. facebook email-Eu-core)")
+    parser.add_argument("--total_budget", type=int, nargs='+', default=[20, 110, 200], help="List of total budgets (k values)")
     parser.add_argument("--num_communities", type=int, default=16, help="Number of communities")
     parser.add_argument("--max_gen", type=int, default=20, help="Maximum number of generations")
     parser.add_argument("--t_comm", type=int, default=5, help="Communication interval")
+    parser.add_argument("--mc_runs", type=int, default=100, help="Number of Monte Carlo runs for evaluation")
     
     # LLM Arguments
-    parser.add_argument("--llm_provider", type=str, default="mock", choices=["mock", "local", "openai"], help="LLM Provider")
+    parser.add_argument("--llm_provider", type=str, default="local", choices=["mock", "local", "openai"], help="LLM Provider")
     parser.add_argument("--llm_model", type=str, default="qwen3-max", help="Model name (or path for local)")
     parser.add_argument("--api_key", type=str, default=None, help="API Key for OpenAI")
     parser.add_argument("--model_root", type=str, default="../../models", help="Root directory for local models")
 
     args = parser.parse_args()
 
-    # Configuration
-    GRAPH_NAME = args.graph_name
-    GRAPH_PATH = f"../graph/{GRAPH_NAME}.txt"
-    SN_NODES = select_SN(GRAPH_NAME, 50) # Placeholder, should load from select_SN
-    TOTAL_BUDGET = args.total_budget
+    # Configuration Constants
+    K_VALUES = args.total_budget
     NUM_COMMUNITIES = args.num_communities
     MAX_GEN = args.max_gen
     T_COMM = args.t_comm # Communication interval
@@ -49,101 +53,202 @@ def main():
         model_root=args.model_root
     )
 
-    # Initialize Environment
-    print("Initializing MAPCMCC Environment...")
-    env = PCMCCEnvironment(GRAPH_PATH, SN_NODES, TOTAL_BUDGET, NUM_COMMUNITIES)
-    
-    # Initialize Agents
-    community_agents = {}
-    for com_id in env.communities:
-        community_agents[com_id] = CommunityAgent(
-            agent_id=f"ComAgent_{com_id}",
-            llm_client=llm_client
-        )
-    
-    # MetaAgent is currently missing in the repo or imported incorrectly, 
-    # but assuming it exists or will be fixed:
-    try:
-        meta_agent = MetaAgent(llm_client=llm_client) 
-    except Exception as e:
-        print(f"Warning: Failed to initialize MetaAgent: {e}")
-        meta_agent = None
-    
-    print("Starting Evolution Loop...")
-    start_time = time.time()
-    
-    for gen in range(1, MAX_GEN + 1):
-        print(f"\n--- Generation {gen} ---")
+    for GRAPH_NAME in args.graphs:
+        print(f"\n##########################################")
+        print(f"Processing Graph: {GRAPH_NAME}")
+        print(f"##########################################\n")
         
-        # 1. Standard Evolution Step (PCMCC)
-        env.step()
-        
-        # 2. Agent Interaction (Every T_comm generations)
-        if gen % T_COMM == 0:
-            print(">>> Triggering Multi-Agent Interaction")
+        # Determine if directed
+        is_directed = False
+        if GRAPH_NAME in DIRECTED_GRAPHS:
+            is_directed = True
+            print(f"Graph '{GRAPH_NAME}' identified as DIRECTED.")
+        elif GRAPH_NAME in UNDIRECTED_GRAPHS:
+            is_directed = False
+            print(f"Graph '{GRAPH_NAME}' identified as UNDIRECTED.")
+        else:
+            print(f"Warning: Graph '{GRAPH_NAME}' type unknown. Defaulting to UNDIRECTED.")
             
-            # A. Community Agents
-            for com_id, agent in community_agents.items():
-                # Get Observation
-                # obs = env.communities[com_id].get_observation(...)
-                # For now, mock observation construction since Env logic is skeletal
-                obs = CommunityObservation(
-                    community_id=com_id,
-                    current_generation=gen,
-                    global_stage="exploration",
-                    budget=env.communities[com_id].state.budget,
-                    current_dpadv=0.5,
-                    dpadv_history=[],
-                    diversity_score=0.1,
-                    top_k_score_nodes=[],
-                    current_seed_set=[],
-                    boundary_info={},
-                    global_dpadv=0.4
-                )
-                
-                # Get Action (LLM/Rule-Based)
-                action = agent.get_action(obs)
-                
-                # Apply Action
-                env.apply_community_action(com_id, action)
-                
-            # B. Meta Agent
-            if meta_agent:
-                obs = env.get_global_observation()
-                # Mock
-                meta_obs = MetaObservation(
-                    current_generation=gen,
-                    current_global_dpadv=0.4,
-                    global_dpadv_history=[],
-                    community_summaries=[],
-                    merge_history=[]
-                )
-                
-                meta_action = meta_agent.get_action(meta_obs)
-                
-                # 2.1 Apply Meta-Agent Suggestions to Environment
-                # Specifically handling Merge Suggestions which need to override/guide the standard merge logic
-                if meta_action.merge_suggestions:
-                    print(f"Meta-Agent suggests merging: {meta_action.merge_suggestions}")
-                    env.set_merge_suggestions(meta_action.merge_suggestions)
-                
-                env.apply_meta_action(meta_action)
-            
-        # 3. Check Convergence
-        # if env.check_convergence(): break
+        GRAPH_PATH = f"../graph/{GRAPH_NAME}.txt"
         
-    end_time = time.time()
-    print(f"\nEvolution Finished. Total Time: {end_time - start_time:.2f}s")
-    print(f"Best Global DPADV: {env.global_best_dpadv}")
+        try:
+            SN_NODES = select_SN(GRAPH_NAME, 50, is_directed=is_directed)
+        except Exception as e:
+            print(f"Error selecting SN nodes for {GRAPH_NAME}: {e}")
+            continue
 
-    # Calculate and print Negatively Activated Nodes
-    from mapcmcc.core.evaluator import DPADVEvaluator
-    if env.global_best_seed:
-        print("Calculating final activated nodes...")
-        neg_activated_count = DPADVEvaluator.get_activated_node_count(env.global_best_seed, env.Gs, env.sn_nodes)
-        print(f"Negatively Activated Nodes: {neg_activated_count}")
-    else:
-        print("Warning: No global best seed set found.")
+        results_coicm = []
+        results_mcicm = []
+
+        for k in K_VALUES:
+            print(f"\n==========================================")
+            print(f"Starting Run for {GRAPH_NAME} with Budget (k) = {k}")
+            print(f"==========================================\n")
+
+            # Initialize Environment
+            print("Initializing MAPCMCC Environment...")
+            env = PCMCCEnvironment(GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, is_directed=is_directed)
+            
+            # Initialize Agents
+            community_agents = {}
+            for com_id in env.communities:
+                community_agents[com_id] = CommunityAgent(
+                    agent_id=f"ComAgent_{com_id}",
+                    llm_client=llm_client
+                )
+            
+            # MetaAgent
+            try:
+                meta_agent = MetaAgent(llm_client=llm_client) 
+            except Exception as e:
+                print(f"Warning: Failed to initialize MetaAgent: {e}")
+                meta_agent = None
+            
+            print("Starting Evolution Loop...")
+            start_time = time.time()
+            
+            for gen in range(1, MAX_GEN + 1):
+                print(f"\n--- Generation {gen} ---")
+                
+                # 1. Standard Evolution Step (PCMCC)
+                env.step()
+                
+                # Sync Agents with Environment (Handle Merges)
+                current_community_ids = set(env.communities.keys())
+                agent_ids = set(community_agents.keys())
+                
+                # Remove agents for deleted communities
+                for cid in agent_ids - current_community_ids:
+                    del community_agents[cid]
+                    
+                # Add agents for new communities
+                for cid in current_community_ids - agent_ids:
+                    community_agents[cid] = CommunityAgent(
+                        agent_id=f"ComAgent_{cid}",
+                        llm_client=llm_client
+                    )
+                
+                # 2. Agent Interaction (Every T_comm generations)
+                if gen % T_COMM == 0:
+                    print("\n>>> Triggering Multi-Agent Interaction")
+                    
+                    # A. Community Agents
+                    for com_id, agent in community_agents.items():
+                        # Get Real Observation
+                        obs_dict = env.communities[com_id].get_observation(
+                            current_gen=gen,
+                            global_stage="exploration", # Simplified stage logic
+                            global_dpadv=env.global_best_dpadv
+                        )
+                        # Convert dict to Dataclass
+                        obs = CommunityObservation(**obs_dict)
+                        
+                        # Get Action (LLM/Rule-Based)
+                        action = agent.get_action(obs)
+                        
+                        # Apply Action
+                        env.apply_community_action(com_id, action)
+                        
+                    # B. Meta Agent
+                    if meta_agent:
+                        # Get Real Global Observation
+                        obs = env.get_global_observation()
+                        
+                        meta_action = meta_agent.get_action(obs)
+                        
+                        # 2.1 Apply Meta-Agent Suggestions to Environment
+                        if meta_action.merge_suggestions:
+                            print(f"Meta-Agent suggests merging: {meta_action.merge_suggestions}")
+                            env.set_merge_suggestions(meta_action.merge_suggestions)
+                        
+                        env.apply_meta_action(meta_action)
+                    
+                # 3. Check Convergence
+                # if env.check_convergence(): break
+                
+            end_time = time.time()
+            print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}. Total Time: {end_time - start_time:.2f}s")
+            print(f"Best Global DPADV: {env.global_best_dpadv}")
+
+            # Calculate and print Negatively Activated Nodes
+            neg_activated_count_coicm = 0
+            neg_activated_count_mcicm = 0
+            
+            if env.global_best_seed:
+                print(f"Calculating final activated nodes (Monte Carlo runs: {args.mc_runs})...")
+                
+                # COICM
+                neg_activated_count_coicm = DPADVEvaluator.get_activated_node_count(
+                    env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='COICM'
+                )
+                print(f"Negatively Activated Nodes (COICM, k={k}): {neg_activated_count_coicm}")
+                
+                # MCICM
+                neg_activated_count_mcicm = DPADVEvaluator.get_activated_node_count(
+                    env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='MCICM'
+                )
+                print(f"Negatively Activated Nodes (MCICM, k={k}): {neg_activated_count_mcicm}")
+                
+            else:
+                print("Warning: No global best seed set found.")
+            
+            results_coicm.append(neg_activated_count_coicm)
+            results_mcicm.append(neg_activated_count_mcicm)
+
+        # Plotting Results
+        print(f"\nGenerating Plots for {GRAPH_NAME}...")
+        
+        # 1. COICM Plot
+        try:
+            output_fig_dir_coicm = f"../results/COICM/MAPCMCC/"
+            if not os.path.exists(output_fig_dir_coicm):
+                os.makedirs(output_fig_dir_coicm)
+            
+            plt.figure(figsize=(6, 6))
+            plt.plot(K_VALUES, results_coicm, marker='o', linestyle='--', label=GRAPH_NAME, color='salmon')
+            
+            for x, y in zip(K_VALUES, results_coicm):
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                
+            plt.title(f'COICM {GRAPH_NAME}')
+            plt.xlabel('k')
+            plt.ylabel('Negatively Activated Nodes')
+            plt.xticks(K_VALUES)
+            plt.tight_layout()
+            
+            plot_path_coicm = os.path.join(output_fig_dir_coicm, f'COICM_{GRAPH_NAME}.png')
+            plt.savefig(plot_path_coicm)
+            plt.close()
+            print(f"Saved COICM plot to {plot_path_coicm}")
+            
+        except Exception as e:
+            print(f"Error plotting COICM: {e}")
+
+        # 2. MCICM Plot
+        try:
+            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/"
+            if not os.path.exists(output_fig_dir_mcicm):
+                os.makedirs(output_fig_dir_mcicm)
+            
+            plt.figure(figsize=(6, 6))
+            plt.plot(K_VALUES, results_mcicm, marker='o', linestyle='--', label=GRAPH_NAME, color='skyblue')
+            
+            for x, y in zip(K_VALUES, results_mcicm):
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                
+            plt.title(f'MCICM {GRAPH_NAME}')
+            plt.xlabel('k')
+            plt.ylabel('Negatively Activated Nodes')
+            plt.xticks(K_VALUES)
+            plt.tight_layout()
+            
+            plot_path_mcicm = os.path.join(output_fig_dir_mcicm, f'MCICM_{GRAPH_NAME}.png')
+            plt.savefig(plot_path_mcicm)
+            plt.close()
+            print(f"Saved MCICM plot to {plot_path_mcicm}")
+            
+        except Exception as e:
+            print(f"Error plotting MCICM: {e}")
 
 if __name__ == "__main__":
     main()

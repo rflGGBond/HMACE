@@ -3,8 +3,9 @@ results/
 baseline/__pycache__/
 baseline/directed/__pycache__/
 baseline/undirected/__pycache__/
+mapcmcc/__pycache__/
 mapcmcc/agents/__pycache__/
 mapcmcc/core/__pycache__/
-mapcmcc/environments/__pycache__/
+mapcmcc/environment/__pycache__/
 mapcmcc/utils/__pycache__/
 PCMCC/__pycache__/

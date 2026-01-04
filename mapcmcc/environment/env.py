@@ -11,14 +11,16 @@ from ..utils.types import CommunityAction, MetaAction, MetaObservation, Communit
 import random
 
 class PCMCCEnvironment:
-    def __init__(self, graph_path: str, sn_nodes: List[int], total_budget: int, num_communities: int):
+    def __init__(self, graph_path: str, sn_nodes: List[int], total_budget: int, num_communities: int, is_directed: bool = False):
         self.graph_path = graph_path
         self.sn_nodes = sn_nodes
         self.total_budget = total_budget
         self.initial_num_communities = num_communities
+        self.is_directed = is_directed
+        self.hop = 2 # Default hop count
         
         # Load Graph
-        self.G = nx.Graph()
+        self.G = nx.DiGraph() if is_directed else nx.Graph()
         with open(graph_path, 'r') as f:
             for line in f:
                 parts = line.split()
@@ -41,12 +43,13 @@ class PCMCCEnvironment:
         
         # Parallel Execution Context
         self.manager = multiprocessing.Manager()
-        self.shared_islands = self.manager.list()
-        self.shared_islands_effect = self.manager.list()
-        self.locks = self.manager.list()
-        self.begin_flag = self.manager.list([0])
-        self.max_community_end_flags = self.manager.list()
-        self.com_gen_acc = self.manager.list([0] * num_communities)
+        # Legacy lists - commented out to prevent index errors with dynamic community merging
+        # self.shared_islands = self.manager.list()
+        # self.shared_islands_effect = self.manager.list()
+        # self.locks = self.manager.list()
+        # self.begin_flag = self.manager.list([0])
+        # self.max_community_end_flags = self.manager.list()
+        # self.com_gen_acc = self.manager.list([0] * num_communities)
         
         # Merge suggestions pending execution
         self.pending_merge_suggestions: List[tuple] = []
@@ -193,6 +196,104 @@ class PCMCCEnvironment:
             )
             self.communities[i].update_best_solution(initial_seed, score)
 
+    def _execute_merges(self):
+        """
+        Executes the pending merge suggestions by merging Community objects.
+        This is a simplified implementation that replaces the complex legacy merger.py
+        logic which relied on specific population structures not fully present here.
+        """
+        if not self.pending_merge_suggestions:
+            return
+
+        print(f"Executing Meta-Agent Merges: {self.pending_merge_suggestions}")
+        
+        # Track which communities are being merged to avoid double-merging
+        merged_ids = set()
+        new_communities = {}
+        
+        # Generate new ID starting after the highest current ID
+        next_id = max(self.communities.keys()) + 1
+        
+        for merge_group in self.pending_merge_suggestions:
+            # Filter out invalid IDs or already merged ones
+            valid_group = [
+                cid for cid in merge_group 
+                if cid in self.communities and cid not in merged_ids
+            ]
+            
+            if len(valid_group) < 2:
+                continue
+                
+            # Mark as merged
+            for cid in valid_group:
+                merged_ids.add(cid)
+            
+            # Create New Community
+            # 1. Merge Nodes
+            new_nodes = set()
+            new_budget = 0
+            combined_seed = []
+            
+            # Helper to average parameters
+            params_sum = {'cr1': 0, 'cr2': 0, 'beta': 0, 'alpha': 0}
+            
+            for cid in valid_group:
+                com = self.communities[cid]
+                new_nodes.update(com.state.nodes)
+                new_budget += com.state.budget
+                combined_seed.extend(com.state.current_seed_set)
+                
+                params_sum['cr1'] += com.state.cr1
+                params_sum['cr2'] += com.state.cr2
+                params_sum['beta'] += com.state.beta
+                params_sum['alpha'] += com.state.alpha
+            
+            # 2. Create Object
+            new_com = Community(next_id, list(new_nodes), new_budget)
+            
+            # 3. Set Parameters (Average)
+            count = len(valid_group)
+            new_com.state.cr1 = params_sum['cr1'] / count
+            new_com.state.cr2 = params_sum['cr2'] / count
+            new_com.state.beta = params_sum['beta'] / count
+            new_com.state.alpha = params_sum['alpha'] / count
+            
+            # 4. Set Seed (Truncate to budget if needed)
+            # Ensure unique nodes in seed
+            unique_seed = list(set(combined_seed))
+            if len(unique_seed) > new_budget:
+                # Keep the best ones? For now, random or just first N
+                unique_seed = unique_seed[:new_budget]
+            elif len(unique_seed) < new_budget:
+                # Fill with random from new_nodes
+                candidates = list(new_nodes - set(unique_seed))
+                needed = new_budget - len(unique_seed)
+                if candidates:
+                    unique_seed.extend(random.sample(candidates, min(len(candidates), needed)))
+            
+            # Recalculate fitness for the new seed
+            score = evaluator.DPADVEvaluator.calculate_fitness(
+                unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            )
+            new_com.update_best_solution(unique_seed, score)
+            
+            new_communities[next_id] = new_com
+            next_id += 1
+            
+        # Apply changes to self.communities
+        # Remove old
+        for cid in merged_ids:
+            del self.communities[cid]
+            
+        # Add new
+        self.communities.update(new_communities)
+        
+        # Clear pending
+        self.pending_merge_suggestions = []
+        
+        if new_communities:
+            print(f"Merge Complete. Created {len(new_communities)} new communities. Total communities: {len(self.communities)}")
+
     def step(self):
         """
         Executes one generation of evolution.
@@ -201,10 +302,7 @@ class PCMCCEnvironment:
         
         # 0. Check and Execute Merges (if any pending from Meta-Agent)
         if self.pending_merge_suggestions:
-            print(f"Executing Meta-Agent Merges: {self.pending_merge_suggestions}")
-            # ... (Merge logic placeholder)
-            self.pending_merge_suggestions = []
-            pass
+            self._execute_merges()
 
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
@@ -220,7 +318,13 @@ class PCMCCEnvironment:
             self.Gs, self.fitness_space, self.search_space, 2, N_prob
         )
         
+        # Sort P_score to get top nodes globally (descending order)
+        sorted_p_score = sorted(P_score.items(), key=lambda x: x[1], reverse=True)
+        
         for com_id, com in self.communities.items():
+            # Update community with top scoring nodes
+            com.set_top_k_nodes(sorted_p_score)
+            
             current_seed = com.state.current_seed_set
             if not current_seed: continue
             
@@ -249,18 +353,21 @@ class PCMCCEnvironment:
                 S1_input, SI, budget, cOne, cTwo, self.search_space, P_score
             )
             
-            # 3. Local Search (Delta Score)
-            # We can call the helper function if we mock the inputs, but it's complex.
-            # Instead, we apply a simplified local search: try to improve worst node.
-            # This aligns with _local_search_step intent.
+            # 3. Local Search
+            # Use full local search logic matching PCMCC
+            com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
+            gama_com = self.search_space
             
-            # Evaluate S1
-            score_s1 = evaluator.DPADVEvaluator.calculate_fitness(
-                S1, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            S1_new = evolution.local_search(
+                S1, self.G, com_and_fs, self.hop, N_prob, gama_com
             )
             
-            if score_s1 < com.state.current_dpadv:
-                com.update_best_solution(S1, score_s1)
+            # If changed, update and re-evaluate
+            if S1_new != S1:
+                S1 = S1_new
+                effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
+                    S1, self.G, self.sn_nodes, com_and_fs, self.hop
+                )
                 
             # Update metrics for observation
             com.calculate_metrics([S1, SI], self.Gs) # Use current pop sample
@@ -355,7 +462,7 @@ class PCMCCEnvironment:
                 self.global_best_seed = global_candidate_seed
             else:
                 # Reject: Do nothing (Revert is implicit by not applying)
-                # print(f"Agent {community_id} candidate rejected (DPADV: {new_global_dpadv} >= {self.global_best_dpadv}).")
+                print(f"Agent {community_id} candidate rejected (DPADV: {new_global_dpadv} >= {self.global_best_dpadv}).")
                 pass
 
     def apply_meta_action(self, action: MetaAction):

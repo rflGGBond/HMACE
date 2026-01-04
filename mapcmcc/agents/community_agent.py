@@ -21,17 +21,27 @@ class CommunityAgent(BaseAgent):
         if "dpadv_history" in obs_dict and isinstance(obs_dict["dpadv_history"], list):
             obs_dict["dpadv_history"] = obs_dict["dpadv_history"][-10:] # Keep only last 10 entries
             
-        # Truncate boundary info if too large (optional, but recommended)
+        # Truncate boundary info if too large
         if "boundary_info" in obs_dict and isinstance(obs_dict["boundary_info"], dict):
-             # Just keep a summary or limit keys if needed. For now, we trust it's not huge or we just summarize size.
-             # obs_dict["boundary_info"] = f"Boundary Info with {len(obs_dict['boundary_info'])} items"
-             pass
+            b_info = obs_dict["boundary_info"]
+            # If neighbor_ids list is too long, truncate it
+            if "neighbor_ids" in b_info and isinstance(b_info["neighbor_ids"], list):
+                if len(b_info["neighbor_ids"]) > 50:
+                    b_info["neighbor_ids"] = b_info["neighbor_ids"][:50]
+                    b_info["neighbor_ids_truncated"] = True
+                    b_info["total_neighbors"] = len(obs_dict["boundary_info"]["neighbor_ids"]) # Store original length
+            
+            # If boundary_nodes list exists (future proofing) and is too long
+            if "boundary_nodes" in b_info and isinstance(b_info["boundary_nodes"], list):
+                if len(b_info["boundary_nodes"]) > 50:
+                    b_info["boundary_nodes"] = b_info["boundary_nodes"][:50]
+                    b_info["boundary_nodes_truncated"] = True
 
         system_prompt = f"""
         You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm and a strict JSON generator.
         Your goal is to optimize the 'DPADV' (Negative Influence Blocking) for your specific community.
         
-        GOAL: Optimize 'DPADV' (Blocking Influence) for your community.
+        GOAL: Minimize / Optimize 'DPADV' (Blocking Influence) for your community.
         
         MODES:
         A. "adjust_parameters": Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
@@ -63,7 +73,7 @@ class CommunityAgent(BaseAgent):
         # 2. Call LLM
         try:
             response_str = self.llm_client.get_completion(system_prompt, user_prompt)
-            print(f"LLM Response: {response_str}")  # 输出LLM的原始响应
+            print(f"Community Agent Response: {response_str}")  # 输出Community Agent的原始响应
             response_json = json.loads(response_str)
             
             # 3. Parse Response to Action
