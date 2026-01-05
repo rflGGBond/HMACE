@@ -54,6 +54,9 @@ def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
     S1 = list(S1) # Ensure list
     budget = len(S1)
     
+    if budget == 0:
+        return S1
+    
     while True:
         discount_P_score_diff = []
         

@@ -146,13 +146,16 @@ def main():
             print("Starting Evolution Loop...")
             start_time = time.time()
             
-            for gen in range(1, MAX_GEN + 1):
+            gen = 1
+            while True:
                 print(f"\n--- Generation {gen} ---")
                 print(f"Current Communities: {len(env.communities)}")
                 
                 # 1. Standard Evolution Step (PCMCC)
-                is_agent_step = (gen % T_COMM == 0)
-                env.step(agent_active=is_agent_step)
+                # We pass agent_active=False so that heuristic merges are ALWAYS checked/executed in the step.
+                # This ensures the generation is "fully completed" (including standard merges) 
+                # before the Agent is called to observe the result.
+                env.step(agent_active=False)
                 
                 # Sync Agents with Environment (Handle Merges)
                 current_community_ids = set(env.communities.keys())
