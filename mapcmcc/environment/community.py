@@ -39,13 +39,18 @@ class CommunityState:
     # Status
     stage: str = "exploration" # exploration, exploitation, stagnation
     stagnation_count: int = 0 # Generations without improvement
+    
+    # Heuristic Baseline (for automatic merging)
+    benchmark_gen: int = 0
+    benchmark_fitness: float = float('inf')
 
 class Community:
     def __init__(self, community_id: int, nodes: List[int], budget: int):
         self.state = CommunityState(
             community_id=community_id,
             nodes=nodes,
-            budget=budget
+            budget=budget,
+            benchmark_fitness=float('inf') # Initialize high
         )
         # Population is managed by the environment's executor usually, 
         # but we can keep a reference or local copy if needed.

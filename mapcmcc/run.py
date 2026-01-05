@@ -148,9 +148,11 @@ def main():
             
             for gen in range(1, MAX_GEN + 1):
                 print(f"\n--- Generation {gen} ---")
+                print(f"Current Communities: {len(env.communities)}")
                 
                 # 1. Standard Evolution Step (PCMCC)
-                env.step()
+                is_agent_step = (gen % T_COMM == 0)
+                env.step(agent_active=is_agent_step)
                 
                 # Sync Agents with Environment (Handle Merges)
                 current_community_ids = set(env.communities.keys())
@@ -205,7 +207,11 @@ def main():
                         env.apply_meta_action(meta_action)
                     
                 # 3. Check Convergence
-                # if env.check_convergence(): break
+                if env.check_termination(MAX_GEN): 
+                    break
+                
+                print(f"Generation {gen} Best DPADV: {env.global_best_dpadv}")
+                gen += 1
                 
             end_time = time.time()
             print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}. Total Time: {end_time - start_time:.2f}s")

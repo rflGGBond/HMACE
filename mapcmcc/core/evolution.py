@@ -379,6 +379,9 @@ def _local_search_step(
     Helper function to perform local search (Delta Score based node replacement).
     Refactored from original code (lines 446-593).
     """
+    if budget == 0:
+        return
+
     while True:
         # 1. Identify current best solution S1 in shared memory
         start_idx = islands_effect_index[community_id, subpop_id, 0]

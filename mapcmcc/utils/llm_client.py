@@ -66,7 +66,7 @@ class LLMClient:
         except Exception as e:
             raise RuntimeError(f"Failed to load local model: {e}")
 
-    def get_completion(self, system_prompt: str, user_prompt: str, response_format: str = "json", temperature: float = 0.2) -> str:
+    def get_completion(self, system_prompt: str, user_prompt: str, response_format: str = "json", temperature: float = 0.5) -> str:
         """
         Sends a prompt to the LLM and returns the response content.
         """
@@ -120,18 +120,26 @@ class LLMClient:
         original_text = text
         
         # Remove Markdown code blocks if present
+        extracted_from_markdown = None
         if "```json" in text:
             try:
-                text = text.split("```json")[1].split("```")[0]
+                extracted_from_markdown = text.split("```json")[1].split("```")[0]
             except IndexError:
                 pass
         elif "```" in text:
             try:
-                text = text.split("```")[1].split("```")[0]
+                extracted_from_markdown = text.split("```")[1].split("```")[0]
             except IndexError:
                 pass
         
-        text = text.strip()
+        # If we successfully extracted something AND it looks like it has JSON, use it.
+        # Otherwise, stick to the original text (or maybe the text before the markdown?)
+        
+        candidate_text = text
+        if extracted_from_markdown and "{" in extracted_from_markdown:
+             candidate_text = extracted_from_markdown
+        
+        text = candidate_text.strip()
         
         # Find the first '{' and the last '}'
         start = text.find("{")

@@ -4,14 +4,15 @@
 GRAPHS="email-Eu-core"
 TOTAL_BUDGET="20"
 NUM_COMMUNITIES=16
-MAX_GEN=21
+MAX_GEN=20
 T_COMM=4
 MC_RUNS=100
 
 # LLM Configuration
 # Options: local, openai
-LLM_PROVIDER="local" 
-LLM_MODEL="Qwen2.5-7B-Instruct" 
+LLM_PROVIDER="openai" 
+LLM_MODEL="qwen2.5-7b-instruct" 
+# LLM_MODEL="Qwen2.5-7B"
 API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8" 
 MODEL_ROOT="../../models"
 

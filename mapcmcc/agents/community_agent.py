@@ -55,17 +55,22 @@ class CommunityAgent(BaseAgent):
             OUTPUT RULES:
             1. Return ONLY valid JSON.
             2. Output format: {{ "reasoning": "...", "action_type": "..." }}
-            3. "action_type" MUST be either "adjust_parameters" or "propose_candidate".
-            4. "reasoning" MUST be concise (max 20 words).
+            3. "action_type" MUST be strictly either "adjust_parameters" or "propose_candidate". Do not output "both".
+            4. "reasoning" MUST be a single concise sentence (max 20 words).
             """
             step1_user_prompt = f"Current Observation: {obs_json_str}\n\nDecide action type. Respond with valid JSON."
             
-            response_step1_str = self.llm_client.get_completion(step1_system_prompt, step1_user_prompt, temperature=0.65)
+            response_step1_str = self.llm_client.get_completion(step1_system_prompt, step1_user_prompt, temperature=0.8)
             print(f"Community Agent {self.agent_id} Step 1 Response: {response_step1_str}")
             step1_json = json.loads(response_step1_str)
             
             action_type = step1_json.get("action_type")
             reasoning = step1_json.get("reasoning", "")
+            
+            # Handle "both" hallucination by prioritizing candidate proposal
+            if action_type and "both" in action_type.lower():
+                print(f"Agent {self.agent_id} returned 'both'. Defaulting to 'propose_candidate'.")
+                action_type = "propose_candidate"
             
             # Initialize action
             action = CommunityAction()
@@ -74,7 +79,7 @@ class CommunityAgent(BaseAgent):
             
             if action_type == "adjust_parameters":
                 # Mode A: Parameter Tuning
-                param_temp = 0.65
+                param_temp = 0.75
                 
                 step2_system_prompt = f"""
                 You decided to 'adjust_parameters'.
@@ -90,7 +95,8 @@ class CommunityAgent(BaseAgent):
                 OUTPUT RULES:
                 1. Return ONLY valid JSON.
                 2. Output format: {{ "parameters": {{ "cr1": ..., "cr2": ..., "beta": ..., "alpha": ... }} }}
-                3. NO comments (like // ... or /* ... */) inside the JSON. Standard JSON does not support comments.
+                3. Parameters MUST be rounded to exactly 2 decimal places (e.g., 0.45, 5.00).
+                4. NO comments (like // ... or /* ... */) inside the JSON. Standard JSON does not support comments.
                 """
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate parameters. Respond with valid JSON."
                 
@@ -132,7 +138,7 @@ class CommunityAgent(BaseAgent):
                 """
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate candidate seed set. Respond with valid JSON."
                 
-                response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=0.65)
+                response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=0.7)
                 print(f"Community Agent {self.agent_id} Step 2 (Mode B) Response: {response_step2_str}")
                 step2_json = json.loads(response_step2_str)
                 

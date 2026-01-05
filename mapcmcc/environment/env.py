@@ -44,6 +44,16 @@ class PCMCCEnvironment:
         self.global_best_seed = []
         self.global_best_dpadv = float('inf')
         
+        # Convergence Tracking
+        self.last_improved_gen = 0
+        self.convergence_patience = 25  # Stop if no improvement for 5 generations
+        
+        # PCMCC Termination Logic Attributes
+        self.s_g = 3
+        self.theta = 1.0
+        self.termination_beta = 2
+        self.e_g_b = None # Generation when global evolution begins (1 community)
+        
         # Parallel Execution Context
         self.manager = multiprocessing.Manager()
         # Legacy lists - commented out to prevent index errors with dynamic community merging
@@ -299,15 +309,75 @@ class PCMCCEnvironment:
         if new_communities:
             print(f"Merge Complete. Created {len(new_communities)} new communities. Total communities: {len(self.communities)}")
 
-    def step(self):
+    def _check_heuristic_merge(self):
+        """
+        Implements the original PCMCC heuristic merging logic.
+        Checks for stagnation and merges communities if they don't improve fast enough.
+        """
+        theta = 1.0
+        s_l = 3
+        k = self.total_budget
+        
+        merge_flags = {} # community_id -> flag (-1 means needs merge)
+        candidates = []
+        
+        # 1. Check Stagnation
+        for cid, com in self.communities.items():
+            current_dpadv = com.state.current_dpadv
+            benchmark_dpadv = com.state.benchmark_fitness
+            if benchmark_dpadv == float('inf'):
+                 # First time initialization
+                 com.state.benchmark_fitness = current_dpadv
+                 com.state.benchmark_gen = self.current_gen
+                 continue
+                 
+            deltaF = benchmark_dpadv - current_dpadv
+            deltaT = self.current_gen - com.state.benchmark_gen
+            
+            threshold = theta * deltaT * com.state.budget / k
+            
+            # PCMCC Logic:
+            # if (deltaF <= threshold) and (deltaT >= s_l): merge
+            # elif deltaF > threshold: update benchmark
+            
+            if deltaF <= threshold and deltaT >= s_l:
+                merge_flags[cid] = -1
+                candidates.append(cid)
+            elif deltaF > threshold:
+                # Reset benchmark
+                com.state.benchmark_fitness = current_dpadv
+                com.state.benchmark_gen = self.current_gen
+        
+        if not candidates:
+            return
+
+        print(f"Heuristic Merge Check: Found {len(candidates)} stagnant communities: {candidates}")
+        
+        # 2. Find Merge Partners (Pairing)
+        # Use centralized logic from merger.py
+        com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
+        merge_groups = merger.identify_merge_groups(self.G, com_nodes_map, candidates)
+        
+        # 3. Execute Merges
+        if merge_groups:
+            print(f"Heuristic Merge Groups: {merge_groups}")
+            self.set_merge_suggestions(merge_groups)
+            self._execute_merges()
+
+    def step(self, agent_active: bool = False):
         """
         Executes one generation of evolution.
+        :param agent_active: True if an Agent was called in this generation.
         """
         self.current_gen += 1
         
-        # 0. Check and Execute Merges (if any pending from Meta-Agent)
+        # 0. Check and Execute Merges
+        # A. Priority: Pending Agent Suggestions
         if self.pending_merge_suggestions:
             self._execute_merges()
+        # B. Fallback: Heuristic Merging (Only if no Agent active)
+        elif not agent_active:
+             self._check_heuristic_merge()
 
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
@@ -396,20 +466,32 @@ class PCMCCEnvironment:
             com.calculate_metrics([S1, SI], self.Gs) # Use current pop sample
 
         # 2. Update Global State
-        # Find global best
-        best_com_id = -1
-        best_dpadv = float('inf')
-        
-        for com_id, com in self.communities.items():
-            if com.state.current_dpadv < best_dpadv:
-                best_dpadv = com.state.current_dpadv
-                best_com_id = com_id
-        
-        if best_com_id != -1:
-             # In a real scenario, global best is combination of all community seeds.
-             # Here we simplify.
-             self.global_best_dpadv = best_dpadv
-             self.global_dpadv_history.append(best_dpadv)
+        # Correctly calculate global DPADV by combining seeds from all communities
+        current_global_seed = []
+        for com in self.communities.values():
+            current_global_seed.extend(com.state.current_seed_set)
+            
+        if current_global_seed:
+            # Calculate true global fitness
+            current_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
+                current_global_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            )
+            
+            # Check for improvement
+            if current_global_dpadv < self.global_best_dpadv:
+                print(f"Env Step {self.current_gen}: New Global Best Found! ({self.global_best_dpadv:.4f} -> {current_global_dpadv:.4f})")
+                self.global_best_dpadv = current_global_dpadv
+                self.global_best_seed = copy.deepcopy(current_global_seed)
+                self.last_improved_gen = self.current_gen
+                
+                # Update the score of the active parameters in history
+                # Assuming the last entry in parameter_history corresponds to the current active global baselines
+                if self.parameter_history:
+                    self.parameter_history[-1]['global_score'] = current_global_dpadv
+                    # Maintain sorted order (top 10 best params)
+                    self.parameter_history.sort(key=lambda x: x['global_score'])
+            
+            self.global_dpadv_history.append(self.global_best_dpadv)
 
     def get_global_observation(self):
         """
@@ -503,9 +585,72 @@ class PCMCCEnvironment:
         com = self.communities.get(community_id)
         if not com: return
         
-        # 1. Update Parameters (Mode A)
+        # 1. Update Parameters (Mode A) - Now with Simulation Evaluation
         if action.parameters:
-            com.update_parameters(action.parameters)
+            print(f"Agent {community_id} proposing parameter adjustment: {action.parameters}")
+            
+            # --- Simulation Step ---
+            # Create a temporary simulation to test if these parameters actually help
+            
+            # 1. Prepare Simulation Context
+            # We need to simulate one evolution step for this community with the NEW parameters
+            sim_params = action.parameters
+            current_seed = com.state.current_seed_set
+            
+            # Use current environment state for context
+            N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
+                self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            )
+            P_score = evaluator.DPADVEvaluator.calculate_positive_score(
+                self.Gs, self.fitness_space, self.search_space, 2, N_prob
+            )
+            
+            # 2. Execute Evolutionary Step (Mutation -> Crossover -> Local Search)
+            # A. Generate SI (Mutation)
+            SI = copy.deepcopy(current_seed)
+            if self.search_space and SI: # Check if SI is not empty
+                 candidates = list(set(self.search_space) - set(SI))
+                 if candidates:
+                     idx = random.randint(0, len(SI)-1)
+                     SI[idx] = random.choice(candidates)
+            
+            # B. Crossover (using NEW parameters)
+            S1_input = copy.deepcopy(current_seed)
+            S1_sim = evolution.crossover_and_mutate(
+                S1_input, SI, com.state.budget, 
+                sim_params.get('cr1', com.state.cr1), 
+                sim_params.get('cr2', com.state.cr2), 
+                self.search_space, P_score,
+                alpha=sim_params.get('alpha', com.state.alpha)
+            )
+            
+            # C. Local Search (using NEW parameters)
+            com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
+            gama_com = self.search_space # Simplified, or could be refined based on alpha
+            
+            S1_sim_new = evolution.local_search(
+                S1_sim, self.G, com_and_fs, self.hop, N_prob, gama_com
+            )
+            if S1_sim_new != S1_sim:
+                S1_sim = S1_sim_new
+                
+            # 3. Evaluate Result
+            sim_fitness = evaluator.DPADVEvaluator.calculate_fitness(
+                S1_sim, self.G, self.sn_nodes, com_and_fs, self.hop
+            )
+            
+            # 4. Compare with Current Best
+            # Note: We compare against com.state.current_dpadv (Local Best)
+            if sim_fitness < com.state.current_dpadv:
+                print(f"  -> Simulation Successful! New Params yielded better local fitness ({com.state.current_dpadv:.4f} -> {sim_fitness:.4f}). Accepted.")
+                # Accept Parameters
+                com.update_parameters(action.parameters)
+                # OPTIONAL: Also accept the better solution found during simulation?
+                # For now, let's just accept parameters. The next real step will likely find it or better.
+            else:
+                print(f"  -> Simulation Failed. New Params did not improve local fitness ({sim_fitness:.4f} >= {com.state.current_dpadv:.4f}). Rejected.")
+                # Reject Parameters - Do not call update_parameters
+                pass
         
         # 2. Candidate Generation (Mode B) - Try-Evaluate-Revert Logic
         if action.candidate_seed_set:
@@ -540,35 +685,152 @@ class PCMCCEnvironment:
                 com.update_best_solution(action.candidate_seed_set, new_global_dpadv) # Note: Local DPADV is approximation here
                 self.global_best_dpadv = new_global_dpadv
                 self.global_best_seed = global_candidate_seed
+                self.last_improved_gen = self.current_gen # Reset patience
             else:
                 # Reject: Do nothing (Revert is implicit by not applying)
                 print(f"Agent {community_id} candidate rejected (DPADV: {new_global_dpadv} >= {self.global_best_dpadv}).")
                 pass
 
+    def check_termination(self, max_gen: int) -> bool:
+        """
+        Checks termination conditions based on PCMCC logic.
+        1. Timeout: max_gen + beta * s_g
+        2. Convergence: 1 community + stable fitness
+        """
+        # 1. Timeout Check
+        timeout_gen = max_gen + self.termination_beta * self.s_g
+        if self.current_gen >= timeout_gen:
+            print(f"Termination: Reached maximum generation limit ({timeout_gen}).")
+            return True
+
+        # 2. Convergence Check
+        if len(self.communities) == 1:
+            # Set e_g_b if this is the first time we see 1 community
+            if self.e_g_b is None:
+                self.e_g_b = self.current_gen
+                print(f"Global evolution phase started at generation {self.e_g_b}")
+            
+            # Ensure we have enough history in the global phase
+            # Condition: (curT > s_g) and ((curT - s_g) >= e_g_b)
+            if (self.current_gen > self.s_g) and ((self.current_gen - self.s_g) >= self.e_g_b):
+                # Check slope: improvement over last s_g generations
+                # global_dpadv_history stores values for each generation [gen1, gen2, ... genN]
+                
+                if len(self.global_dpadv_history) > self.s_g:
+                    # history[-1] is current. history[-(1+s_g)] is s_g steps ago.
+                    current_val = self.global_dpadv_history[-1]
+                    past_val = self.global_dpadv_history[-(1 + self.s_g)]
+                    
+                    improvement = past_val - current_val
+                    threshold = self.theta * self.s_g
+                    
+                    if improvement <= threshold:
+                        print(f"Termination: Converged. (Improvement {improvement:.4f} <= Threshold {threshold:.4f})")
+                        return True
+        
+        return False
+
+    def check_convergence(self) -> bool:
+        """
+        Checks if the global best DPADV has stagnated for 'patience' generations.
+        Returns True if converged (should stop), False otherwise.
+        """
+        generations_since_improvement = self.current_gen - self.last_improved_gen
+        
+        if generations_since_improvement >= self.convergence_patience:
+            print(f"Convergence Reached: No improvement for {generations_since_improvement} generations.")
+            return True
+            
+        return False
+
     def apply_meta_action(self, action: MetaAction):
         """
         Applies global decisions from Meta-Agent.
         """
-        # 1. Update Global Baselines
+        # 1. Update Global Baselines - Now with Global Simulation Evaluation
         if action.global_baselines:
-            print(f"Meta-Agent updating global baselines: {action.global_baselines}")
-            for com in self.communities.values():
-                com.update_parameters(action.global_baselines, is_global_baseline=True)
+            print(f"Meta-Agent proposing global baselines: {action.global_baselines}")
             
-            # Track Parameter History
-            # Store the NEW parameters and the CURRENT global score (as a baseline for their performance)
-            # Note: The true evaluation of these parameters happens in the NEXT generation.
-            # However, for simplicity in "evolutionary prompt", we pair them with the score at the end of this gen.
-            self.parameter_history.append({
-                'params': action.global_baselines,
-                'global_score': self.global_best_dpadv # Using current best as proxy
-            })
+            # --- Global Simulation Step ---
+            # Simulate one step for ALL communities using the new global parameters
             
-            # Sort by score (ascending - lower is better)
-            self.parameter_history.sort(key=lambda x: x['global_score'])
-            # Keep top 10
-            if len(self.parameter_history) > 10:
-                self.parameter_history = self.parameter_history[:10]
+            sim_global_seeds = []
+            sim_params = action.global_baselines
+            
+            # Pre-calculate shared metrics
+            N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
+                self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            )
+            P_score = evaluator.DPADVEvaluator.calculate_positive_score(
+                self.Gs, self.fitness_space, self.search_space, 2, N_prob
+            )
+            
+            print("  -> Running Global Simulation for new parameters...")
+            
+            for com_id, com in self.communities.items():
+                current_seed = com.state.current_seed_set
+                
+                # A. Generate SI (Mutation)
+                SI = copy.deepcopy(current_seed)
+                if self.search_space and SI: # Check if SI is not empty
+                     candidates = list(set(self.search_space) - set(SI))
+                     if candidates:
+                         idx = random.randint(0, len(SI)-1)
+                         SI[idx] = random.choice(candidates)
+                
+                # B. Crossover (using NEW GLOBAL parameters)
+                # Note: Meta-Agent sets baselines, but communities might have their own overrides.
+                # Here we assume Global Baseline overrides everything for the simulation to test its pure effect.
+                S1_input = copy.deepcopy(current_seed)
+                S1_sim = evolution.crossover_and_mutate(
+                    S1_input, SI, com.state.budget, 
+                    sim_params.get('cr1', com.state.cr1), 
+                    sim_params.get('cr2', com.state.cr2), 
+                    self.search_space, P_score,
+                    alpha=sim_params.get('alpha', com.state.alpha)
+                )
+                
+                # C. Local Search
+                com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
+                gama_com = self.search_space 
+                
+                S1_sim_new = evolution.local_search(
+                    S1_sim, self.G, com_and_fs, self.hop, N_prob, gama_com
+                )
+                if S1_sim_new != S1_sim:
+                    S1_sim = S1_sim_new
+                
+                sim_global_seeds.extend(S1_sim)
+                
+            # Evaluate Global Result
+            sim_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
+                sim_global_seeds, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            )
+            
+            # Compare with Current Global Best
+            if sim_global_dpadv < self.global_best_dpadv:
+                 print(f"  -> Global Simulation Successful! New Baselines improved Global DPADV ({self.global_best_dpadv:.4f} -> {sim_global_dpadv:.4f}). Accepted.")
+                 
+                 # Apply Parameters
+                 for com in self.communities.values():
+                     com.update_parameters(action.global_baselines, is_global_baseline=True)
+                 
+                 # Track Parameter History
+                 self.parameter_history.append({
+                     'params': action.global_baselines,
+                     'global_score': sim_global_dpadv # Use the simulated score which is accurate
+                 })
+                 
+                 # OPTIONAL: We could technically accept the simulated seeds here to jump-start evolution,
+                 # but for consistency with 'apply_meta_action' role (parameter tuning), we just set params.
+                 # The next real step() will likely reproduce this gain.
+                 
+                 self.parameter_history.sort(key=lambda x: x['global_score'])
+                 if len(self.parameter_history) > 10:
+                     self.parameter_history = self.parameter_history[:10]
+            else:
+                 print(f"  -> Global Simulation Failed. New Baselines did not improve Global DPADV ({sim_global_dpadv:.4f} >= {self.global_best_dpadv:.4f}). Rejected.")
+                 pass
                 
         # 2. Update Budgets (Redistribution)
         if action.budget_adjustments:

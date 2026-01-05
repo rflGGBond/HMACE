@@ -39,51 +39,61 @@ class MetaAgent(BaseAgent):
              obs_dict["merge_history"] = obs_dict["merge_history"][-5:] # Keep only last 5
         
         # Format Parameter History for prompt
-        history_str = ""
+        history_str = "Parameter History (Params -> Score):\n"
         if "parameter_history" in obs_dict and obs_dict["parameter_history"]:
              for entry in obs_dict["parameter_history"]:
-                 history_str += f"{{ {entry['params']} }} {{ {entry['global_score']} }}\n"
+                 history_str += f"{{ {entry['params']} }} -> {entry['global_score']}\n"
         else:
              # Default Fallback
-             history_str = "{ 'cr1': 0.4, 'cr2': 0.4, 'beta': 2.0, 'alpha': 12.0 } { N/A }\n"
+             history_str += "{ 'cr1': 0.4, 'cr2': 0.4, 'beta': 2.0, 'alpha': 12.0 } -> N/A\n"
+             
+        # Format Merge History
+        if "merge_history" in obs_dict and obs_dict["merge_history"]:
+            history_str += "\nRecent Merges:\n"
+            for m in obs_dict["merge_history"]:
+                history_str += f"- Merged {m}\n"
 
         system_prompt = f"""
-        Description of problem and solution properties
-        You are the Meta Agent. Your task is to find a set of global parameters ('cr1', 'cr2', 'beta', 'alpha') that results in the lowest possible Global DPADV score (Negative Influence Blocking).
+        You are the Meta Agent in the MAPCMCC evolutionary algorithm. 
+        Your task is to coordinate the global optimization process by tuning parameters or MERGING communities to minimize the Global DPADV score by coordinating multiple communities.
         
         PARAMETER DEFINITIONS:
-        - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover. Higher values mean more gene exchange.
-        - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover vs one-way.
-        - beta (1.0-10.0): Local Search Intensity. Higher values imply more aggressive local optimization.
-        - alpha (1.0-20.0): Search Space Reduction Factor. Determines the pool size of candidate nodes (alpha * budget). Higher values allow wider exploration but slower convergence.
-
+        - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover.
+        - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover.
+        - beta (1.0-10.0): Local Search Intensity.
+        - alpha (1.0-20.0): Search Space Reduction Factor.
+        
         CRITICAL INSIGHT:
         {struggling_info_str}
+        These communities are improving too slowly based on their budget allocation. 
+        PRIORITIZE merging these communities with their strongly connected neighbors (check 'closeness_info') to pool resources.
         
-        In-context examples (population)
-        Below are some previous parameter sets and their resulting Global DPADV scores. The sets are arranged in descending order based on their scores, where lower values are better.
-
+        In-context examples:
         {history_str}
-
-        Task instructions
-        Please follow the instruction step-by-step to generate new global parameters and coordinate communities:
         
-        1. Select two parameter sets from the above history.
-        2. Crossover the two sets to generate new parameters.
-        3. Mutate the parameters (explore slightly different values).
-        4. Keep the generated parameters as the new 'global_baselines'.
+        TASK INSTRUCTIONS:
+        1. PARAMETER OPTIMIZATION:
+           - Analyze the parameter history.
+           - Select high-performing sets, crossover and mutate them to generate new 'global_baselines'.
+           
+        2. COMMUNITY MERGING:
+           - Review the 'Struggling Communities' list above.
+           - Check 'closeness_info' in the observation to find strongly connected neighbors.
+           - PROPOSE MERGES for struggling communities to pool resources and escape local optima.
+           - Add pairs to 'merge_suggestions' (e.g., [[0, 2]]).
+           
+        3. BUDGET REDISTRIBUTION:
+           - Move budget to communities that need it if necessary.
+           - 'budget_adjustments' should be a dictionary where keys are community IDs and values are the adjustment amounts (positive to add, negative to reduce).
         
-        ADDITIONAL TASKS (Parallel to Evolution):
-        5. Suggest Merges: If communities are struggling (listed above) or have high connection overlap, add them to 'merge_suggestions'.
-        6. Redistribute Budget: If needed, move budget to struggling communities in 'budget_adjustments'.
-
         OUTPUT RULES:
         1. Return ONLY valid JSON.
-        2. Format:
+        2. Parameters in 'global_baselines' MUST be rounded to exactly 2 decimal places (e.g., 0.45, 5.00).
+        3. Format:
         {{
-            "reasoning": "...",
+            "reasoning": "concise explanation",
             "global_baselines": {{ "cr1": float, "cr2": float, "beta": float, "alpha": float }},
-            "budget_adjustments": {{ "id": delta }},
+            "budget_adjustments": {{ "community_id": delta_amount }},
             "merge_suggestions": [[id1, id2]]
         }}
         """
@@ -92,7 +102,7 @@ class MetaAgent(BaseAgent):
         
         # 2. Call LLM
         try:
-            response_str = self.llm_client.get_completion(system_prompt, user_prompt, temperature=0.75)
+            response_str = self.llm_client.get_completion(system_prompt, user_prompt, temperature=0.5)
             print(f"Meta-Agent Response: {response_str}")  # 输出Meta Agent的原始响应
             response_json = json.loads(response_str)
             

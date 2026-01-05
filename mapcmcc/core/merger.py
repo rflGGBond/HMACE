@@ -31,6 +31,157 @@ def calculate_connection_strength(G, nodes_i, nodes_j):
     except Exception:
         return 0.0
 
+def identify_merge_groups(G, community_nodes_map, candidates):
+    """
+    Identifies which communities should be merged based on connection strength.
+    
+    :param G: NetworkX graph
+    :param community_nodes_map: Dict {community_id: [nodes]}
+    :param candidates: List of community IDs that are flagged for merging (stagnant)
+    :return: List of tuples, where each tuple contains community IDs to be merged.
+    """
+    if not candidates:
+        return []
+
+    # 1. Initialize Merge Flags
+    # -1: Needs merge (candidate)
+    # -2: Stable (not candidate)
+    # This mimics the original PCMCC merge array logic
+    all_ids = list(community_nodes_map.keys())
+    merge_flags = {cid: -2 for cid in all_ids}
+    for cid in candidates:
+        merge_flags[cid] = -1
+        
+    # 2. Calculate Connection Strengths & Determine Pairings
+    # We iterate through candidates to find their best partner
+    
+    # Store max connection for each community
+    max_connection_partner = {cid: -1 for cid in all_ids}
+    
+    # Cache for connection scores to avoid re-calculation
+    # Key: (min(i,j), max(i,j)) -> score
+    score_cache = {}
+
+    def get_score(cid1, cid2):
+        key = tuple(sorted((cid1, cid2)))
+        if key in score_cache:
+            return score_cache[key]
+        
+        # PCMCC Metric: sum(internal_weight * boundary_weight)
+        # We need the subgraph of each community to get internal weights.
+        # Since passing subgraphs is heavy, we calculate on the fly using G.
+        # Ideally, we should use the exact formula.
+        
+        score = 0
+        nodes1 = set(community_nodes_map[cid1])
+        nodes2 = set(community_nodes_map[cid2])
+        
+        # Find boundary edges
+        try:
+            boundary_edges = list(nx.edge_boundary(G, nodes1, nodes2))
+            
+            for u, v in boundary_edges:
+                # u in nodes1, v in nodes2 (or vice versa depending on direction, edge_boundary handles it)
+                # But G is directed or undirected? 
+                # PCMCC logic:
+                # for edge in boundary(i, j):
+                #   one_score = sum(weight(v, x) for x in neighbors(v) inside j)
+                #   score += one_score * weight(u, v)
+                
+                # Let's assume u is in cid1, v in cid2.
+                # We need contribution from cid2 (neighbors of v in cid2)
+                # AND contribution from cid1 (neighbors of u in cid1)
+                
+                w_uv = G[u][v]['weight']
+                
+                # Part 1: Contribution from cid2 side
+                # Sum of weights from v to its neighbors in cid2
+                weight_in_2 = 0
+                if v in nodes2: # Should be true
+                    for neighbor in G.neighbors(v):
+                        if neighbor in nodes2:
+                             weight_in_2 += G[v][neighbor]['weight']
+                
+                score += weight_in_2 * w_uv
+                
+                # Part 2: Contribution from cid1 side
+                # Sum of weights from u to its neighbors in cid1
+                weight_in_1 = 0
+                if u in nodes1: # Should be true
+                    for neighbor in G.neighbors(u):
+                        if neighbor in nodes1:
+                            weight_in_1 += G[u][neighbor]['weight']
+                            
+                score += weight_in_1 * w_uv
+                
+        except Exception:
+            score = 0
+            
+        score_cache[key] = score
+        return score
+
+    # Find best partner for each candidate
+    for i in candidates:
+        max_score = -1
+        best_partner = -1
+        
+        for j in all_ids:
+            if i == j: continue
+            
+            s = get_score(i, j)
+            if s > max_score:
+                max_score = s
+                best_partner = j
+        
+        max_connection_partner[i] = best_partner
+
+    # 3. Resolve Merge Flags (Transitive Closure Logic from PCMCC)
+    # Original logic:
+    # for i in sorted_by_size:
+    #   if merge[i] == -1:
+    #     target = best_partner[i]
+    #     if merge[target] is virgin(-2) or needs_merge(-1):
+    #        merge[i] = i
+    #        merge[target] = i
+    #     else:
+    #        merge[i] = merge[target]
+    
+    # We simplify this to: Build a graph where edges are (i, best_partner[i])
+    # and find connected components.
+    # But we must respect the "direction" of merge to some extent?
+    # Actually, connected components is the robust way to say "these guys merge together".
+    
+    # Build adjacency for components
+    adj = defaultdict(set)
+    for i in candidates:
+        target = max_connection_partner[i]
+        if target != -1:
+            adj[i].add(target)
+            adj[target].add(i)
+            
+    # Find components
+    visited = set()
+    groups = []
+    
+    # Only start traversal from candidates (nodes that initiated the merge)
+    for start_node in candidates:
+        if start_node not in visited:
+            component = set()
+            stack = [start_node]
+            visited.add(start_node)
+            while stack:
+                u = stack.pop()
+                component.add(u)
+                for v in adj[u]:
+                    if v not in visited:
+                        visited.add(v)
+                        stack.append(v)
+            
+            if len(component) > 1:
+                groups.append(tuple(component))
+                
+    return groups
+
 def merge_communities(merge_flags, community_list, community_k, population, effect,
                       com_res, Ni, G, subG_list, SN, fitness_space, hop, s_t_l, curT,
                       com_gen_acc, com_ben, P_score, gama, search_space):
