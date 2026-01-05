@@ -222,13 +222,21 @@ def calculate_population_effect(community_id, subpop_id, Ni, population, G, SN, 
         )
     return effect
 
-def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
+def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alpha=None):
     """
     Pure function to perform crossover and mutation on two individuals.
     Returns the new offspring S1.
     """
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
+    
+    # Apply alpha reduction if provided
+    # com_sn is assumed to be sorted (e.g. by degree) as passed from env
+    current_pool = com_sn
+    if alpha is not None:
+        pool_size = int(alpha * budget)
+        if pool_size < len(com_sn):
+            current_pool = com_sn[:pool_size]
     
     repeatS1 = 0
     repeatSI = 0 # Not used for S1 return but kept for logic consistency if we wanted both
@@ -256,18 +264,35 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
                     # But in `_evolve_subpopulation_step`, we update BOTH S1 and SI in shared memory.
                     pass 
                     
-    # To support the full logic, we should probably return BOTH offsprings if they change.
-    # But for the simple usage in env.py (single thread simulation), we usually focus on improving one.
-    # However, to be "correct", let's implement the full logic on lists.
+    # Fix duplicates S1
+    if repeatS1 != 0:
+        candidates = list(set(current_pool) - set(S1))
+        if candidates:
+            # Re-weight P_score for candidates? Or just pass full P_score and let sample handle it?
+            # sample function uses w[u], so we need P_score to contain candidates.
+            # Assuming P_score has all nodes in com_sn.
+            replaceS1 = sample(candidates, P_score, repeatS1)
+            J = 0
+            for e in range(budget):
+                if S1[e] == -1 and J < len(replaceS1):
+                    S1[e] = replaceS1[J]
+                    J += 1
     
     return S1
 
-def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
+def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alpha=None):
     """
     Performs full crossover/mutation on two individuals, returning both modified versions.
     """
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
+    
+    # Apply alpha reduction if provided
+    current_pool = com_sn
+    if alpha is not None:
+        pool_size = int(alpha * budget)
+        if pool_size < len(com_sn):
+            current_pool = com_sn[:pool_size]
     
     repeatS1 = 0
     repeatSI = 0
@@ -296,7 +321,7 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
     
     # Fix duplicates S1
     if repeatS1 != 0:
-        candidates = list(set(com_sn) - set(S1))
+        candidates = list(set(current_pool) - set(S1))
         if candidates:
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
@@ -307,7 +332,7 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
 
     # Fix duplicates SI
     if repeatSI != 0:
-        candidates = list(set(com_sn) - set(SI))
+        candidates = list(set(current_pool) - set(SI))
         if candidates:
             replaceSI = sample(candidates, P_score, repeatSI)
             J = 0
@@ -315,7 +340,7 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score):
                 if SI[e] == -1 and J < len(replaceSI):
                     SI[e] = replaceSI[J]
                     J += 1
-                    
+    
     return S1, SI
 
 def _evolve_subpopulation_step(

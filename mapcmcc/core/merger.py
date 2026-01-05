@@ -4,6 +4,33 @@ from collections import defaultdict
 import heapq
 from .evaluator import DPADVEvaluator
 
+def calculate_connection_strength(G, nodes_i, nodes_j):
+    """
+    Calculates the connection strength (score) between two communities based on boundary edges.
+    Extracted from merge_communities logic.
+    """
+    score = 0
+    # Calculate connection strength (boundary edges * weight)
+    # Note: original logic had complex subG_list neighbor weight lookups.
+    # Simplified here to just sum of edge weights between groups for robustness and speed,
+    # or strictly follow original if subG is available.
+    # Original logic:
+    # merge_score[i, j] += (one_score * G[edge[0]][edge[1]]['weight'])
+    # where one_score was sum of weights of neighbors in subG.
+    
+    # For MAPCMCC Env usage, we use direct edge weight sum as a robust proxy.
+    try:
+        edges = list(nx.edge_boundary(G, nodes_i, nodes_j, data='weight', default=1.0))
+        for u, v, w in edges:
+            score += w
+            
+        # If we want to strictly mimic the "neighbor weight * edge weight" logic:
+        # That logic seems to imply 2-hop or influence weight. 
+        # For now, we return the direct connection strength.
+        return score
+    except Exception:
+        return 0.0
+
 def merge_communities(merge_flags, community_list, community_k, population, effect,
                       com_res, Ni, G, subG_list, SN, fitness_space, hop, s_t_l, curT,
                       com_gen_acc, com_ben, P_score, gama, search_space):

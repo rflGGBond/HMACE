@@ -17,6 +17,8 @@ class CommunityObservation:
     boundary_info: Dict[str, Any]
     parameters: Dict[str, float]
     global_dpadv: float
+    stagnation_count: int = 0
+    solution_history: List[Dict[str, Any]] = field(default_factory=list) # [{'seed': [...], 'score': float}, ...]
 
 @dataclass
 class CommunityAction:
@@ -45,6 +47,7 @@ class MetaObservation:
     global_dpadv_history: List[float]
     community_summaries: List[CommunitySummary]
     merge_history: List[Any]
+    parameter_history: List[Dict[str, Any]] = field(default_factory=list) # [{'params': {...}, 'global_score': float}]
 
 @dataclass
 class MetaAction:

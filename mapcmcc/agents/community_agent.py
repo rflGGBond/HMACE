@@ -14,8 +14,10 @@ class CommunityAgent(BaseAgent):
         self.llm_client = llm_client or LLMClient() # Default to mock if not provided
 
     def get_action(self, observation: CommunityObservation) -> CommunityAction:
-        # 1. Prepare Prompt
+        # 1. Prepare Observation
         obs_dict = dataclasses.asdict(observation)
+        # print(f"Community Agent {self.agent_id} Observation: {obs_dict}")
+        # print(f"Community Agent {self.agent_id} Budget: {observation.budget}")
         
         # Truncate history to prevent prompt overflow
         if "dpadv_history" in obs_dict and isinstance(obs_dict["dpadv_history"], list):
@@ -37,70 +39,118 @@ class CommunityAgent(BaseAgent):
                     b_info["boundary_nodes"] = b_info["boundary_nodes"][:50]
                     b_info["boundary_nodes_truncated"] = True
 
-        system_prompt = f"""
-        You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm and a strict JSON generator.
-        Your goal is to optimize the 'DPADV' (Negative Influence Blocking) for your specific community.
+        obs_json_str = json.dumps(obs_dict, default=str)
         
-        GOAL: Minimize / Optimize 'DPADV' (Blocking Influence) for your community.
-        
-        MODES:
-        A. "adjust_parameters": Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
-        B. "propose_candidate": Propose a list of integer node IDs to be the new seed set. (Size MUST match {observation.budget})
-        
-        INPUT: JSON state of your community.
-        
-        OUTPUT RULES:
-        1. Return ONLY valid JSON. Do not output any plain text, markdown blocks, or explanations.
-        2. Start your response with "{{".
-        3. "action_type" MUST be "adjust_parameters" OR "propose_candidate".
-        4. "reasoning" MUST be a single concise sentence (max 20 words). Keep it brief.
-        5. "candidate_seed_set" size MUST equal the {observation.budget} in input.
-        
-        EXAMPLE OUTPUT:
-        {{
-            "reasoning": "Performance is stagnant, increasing mutation rates.",
-            "action_type": "adjust_parameters",
-            "parameters": 
-            {{ 
-                "cr1": 0.5, "cr2": 0.5, "beta": 3.0, "alpha": 10.0
-            }},
-            "candidate_seed_set": null
-        }}
-        """
-        
-        user_prompt = f"Current Observation: {json.dumps(obs_dict, default=str)}\n\nRespond with valid JSON only. Start with '{{'."
-        
-        # 2. Call LLM
         try:
-            response_str = self.llm_client.get_completion(system_prompt, user_prompt)
-            print(f"Community Agent Response: {response_str}")  # 输出Community Agent的原始响应
-            response_json = json.loads(response_str)
+            # --- STEP 1: DECIDE ACTION TYPE (Low Temperature for Stability) ---
+            step1_system_prompt = f"""
+            You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm.
             
-            # 3. Parse Response to Action
+            GOAL: Minimize 'DPADV' (Blocking Influence) for your community.
+            
+            TASK: Analyze the current state and decide which action mode to take:
+            A. "adjust_parameters": Tune evolutionary parameters if performance is stagnant or needs fine-tuning.
+            B. "propose_candidate": Propose a new seed set if exploration is needed.
+            
+            OUTPUT RULES:
+            1. Return ONLY valid JSON.
+            2. Output format: {{ "reasoning": "...", "action_type": "..." }}
+            3. "action_type" MUST be either "adjust_parameters" or "propose_candidate".
+            4. "reasoning" MUST be concise (max 20 words).
+            """
+            step1_user_prompt = f"Current Observation: {obs_json_str}\n\nDecide action type. Respond with valid JSON."
+            
+            response_step1_str = self.llm_client.get_completion(step1_system_prompt, step1_user_prompt, temperature=0.65)
+            print(f"Community Agent {self.agent_id} Step 1 Response: {response_step1_str}")
+            step1_json = json.loads(response_step1_str)
+            
+            action_type = step1_json.get("action_type")
+            reasoning = step1_json.get("reasoning", "")
+            
+            # Initialize action
             action = CommunityAction()
             
-            if response_json.get("action_type") == "adjust_parameters":
-                action.parameters = response_json.get("parameters")
+            # --- STEP 2: GENERATE CONTENT ---
             
-            elif response_json.get("action_type") == "propose_candidate":
-                candidates = response_json.get("candidate_seed_set")
+            if action_type == "adjust_parameters":
+                # Mode A: Parameter Tuning
+                param_temp = 0.65
+                
+                step2_system_prompt = f"""
+                You decided to 'adjust_parameters'.
+                
+                TASK: Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
+
+                PARAMETER DEFINITIONS:
+                - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover. Higher values mean more gene exchange.
+                - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover vs one-way.
+                - beta (1.0-10.0): Local Search Intensity. Higher values imply more aggressive local optimization.
+                - alpha (1.0-20.0): Search Space Reduction Factor. Determines the pool size of candidate nodes (alpha * budget). Higher values allow wider exploration but slower convergence.
+                
+                OUTPUT RULES:
+                1. Return ONLY valid JSON.
+                2. Output format: {{ "parameters": {{ "cr1": ..., "cr2": ..., "beta": ..., "alpha": ... }} }}
+                3. NO comments (like // ... or /* ... */) inside the JSON. Standard JSON does not support comments.
+                """
+                step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate parameters. Respond with valid JSON."
+                
+                response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=param_temp)
+                print(f"Community Agent {self.agent_id} Step 2 (Mode A) Response: {response_step2_str}")
+                step2_json = json.loads(response_step2_str)
+                
+                action.parameters = step2_json.get("parameters")
+
+            elif action_type == "propose_candidate":
+                # Mode B: High/Adaptive Temperature
+                
+                # Format Population History for the prompt
+                history_str = ""
+                if "solution_history" in obs_dict and obs_dict["solution_history"]:
+                     for sol in obs_dict["solution_history"]:
+                         history_str += f"{{ {sol['seed']} }} {{ {sol['score']} }}\n"
+                else:
+                     # Fallback if no history yet
+                     history_str = f"{{ {observation.current_seed_set} }} {{ {observation.current_dpadv} }}\n"
+
+                step2_system_prompt = f"""
+                Description of problem and solution properties
+                You are given a list of top potential nodes with scores: {observation.top_k_score_nodes}. Your task is to find a seed set of size {observation.budget}, with the lowest possible DPADV score (blocking influence), that minimizes the negative influence.
+
+                In-context examples (population)
+                Below are some previous seed sets and their DPADV scores. The sets are arranged in descending order based on their scores, where lower values are better.
+
+                {history_str}
+
+                Task instructions
+                Please follow the instruction step-by-step to generate a new seed set:
+                1. Analyze the historical successful seed sets (In-context examples) to identify effective blocking nodes.
+                2. Select high-potential nodes from the provided {observation.top_k_score_nodes} list.
+                3. Synthesize these insights to construct a single, superior seed set of size {observation.budget}.
+                4. Ensure the set is diverse and strategically positioned to minimize DPADV.
+                
+                Directly give me the final generated seed set in JSON format: {{ "candidate_seed_set": [id1, id2, ...] }}
+                """
+                step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate candidate seed set. Respond with valid JSON."
+                
+                response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=0.65)
+                print(f"Community Agent {self.agent_id} Step 2 (Mode B) Response: {response_step2_str}")
+                step2_json = json.loads(response_step2_str)
+                
+                candidates = step2_json.get("candidate_seed_set")
                 if candidates and isinstance(candidates, list):
-                    # Auto-fix: Truncate if too long
                     if len(candidates) > observation.budget:
                         print(f"Truncating candidate set from {len(candidates)} to {observation.budget}")
                         candidates = candidates[:observation.budget]
                     action.candidate_seed_set = candidates
                 else:
-                     action.candidate_seed_set = candidates # Pass through if None or invalid type, let validation handle it
+                     action.candidate_seed_set = candidates
+
+            else:
+                print(f"Unknown action type: {action_type}")
                 
             return action
             
         except Exception as e:
-            # Enhanced error logging with raw hex output for invisible characters check
-            import binascii
-            raw_hex = binascii.hexlify(response_str.encode('utf-8', errors='ignore')).decode() if 'response_str' in locals() else "N/A"
             print(f"LLM Error in CommunityAgent {self.agent_id}: {e}.")
-            if 'response_str' in locals():
-                print(f"DEBUG: Failed Raw Response (Hex): {raw_hex}")
             print("Fallback to default.")
             return CommunityAction()  # Return empty action (do nothing)

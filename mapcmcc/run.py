@@ -4,6 +4,7 @@ import time
 import argparse
 import matplotlib.pyplot as plt
 from typing import List, Dict
+import datetime
 
 # Add the parent directory to sys.path to allow imports if running as script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,25 @@ from mapcmcc.utils.types import CommunityObservation, MetaObservation
 from mapcmcc.utils.llm_client import LLMClient
 from mapcmcc.utils.select_SN import select_SN
 from mapcmcc.core.evaluator import DPADVEvaluator
+import random
+import numpy as np
+
+class LoggerWriter:
+    """
+    A simple class to redirect stdout to both terminal and a log file.
+    """
+    def __init__(self, filepath):
+        self.terminal = sys.stdout
+        self.log = open(filepath, "w", encoding="utf-8")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+        self.log.flush() # Ensure it's written immediately
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
 
 # Define graph types based on PCMCC reference
 DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"}
@@ -37,6 +57,25 @@ def main():
     parser.add_argument("--model_root", type=str, default="../../models", help="Root directory for local models")
 
     args = parser.parse_args()
+    
+    # Set seed for reproducibility
+    random.seed(42)
+    np.random.seed(42)
+
+    # --- Setup Logging ---
+    log_dir = "../results/logs/MAPCMCC"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"mapcmcc_{args.graphs[0]}_{args.llm_model}_{timestamp}.log"
+    log_path = os.path.join(log_dir, log_filename)
+    
+    # Redirect stdout to LoggerWriter
+    sys.stdout = LoggerWriter(log_path)
+    
+    print(f"Logging output to: {log_path}")
+    print("-" * 50)
 
     # Configuration Constants
     K_VALUES = args.total_budget
@@ -119,10 +158,12 @@ def main():
                 
                 # Remove agents for deleted communities
                 for cid in agent_ids - current_community_ids:
+                    print(f"Removing Agent for merged/deleted community {cid}")
                     del community_agents[cid]
                     
                 # Add agents for new communities
                 for cid in current_community_ids - agent_ids:
+                    print(f"Initializing Agent for new community {cid}")
                     community_agents[cid] = CommunityAgent(
                         agent_id=f"ComAgent_{cid}",
                         llm_client=llm_client

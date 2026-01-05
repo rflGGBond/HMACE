@@ -4,6 +4,7 @@ import heapq
 import networkx as nx
 import copy
 from typing import List, Dict, Any
+from collections import defaultdict
 
 from ..core import graph_ops, evaluator, evolution, merger
 from .community import Community
@@ -18,6 +19,7 @@ class PCMCCEnvironment:
         self.initial_num_communities = num_communities
         self.is_directed = is_directed
         self.hop = 2 # Default hop count
+        self.initial_alpha = 12.0 # Default search space reduction factor
         
         # Load Graph
         self.G = nx.DiGraph() if is_directed else nx.Graph()
@@ -38,6 +40,7 @@ class PCMCCEnvironment:
         # Global State
         self.current_gen = 0
         self.global_dpadv_history = []
+        self.parameter_history: List[Dict[str, Any]] = [] # [{'params': {...}, 'global_score': float}]
         self.global_best_seed = []
         self.global_best_dpadv = float('inf')
         
@@ -133,9 +136,10 @@ class PCMCCEnvironment:
         self.Gs = self.G.subgraph(all_nodes).copy()
         
         # 4. Search Space Reduction
-        # (Simplified)
+        # Use initial_alpha parameter instead of hardcoded value
+        # Use Degree Centrality (In+Out) as heuristic
         self.search_space = heapq.nlargest(
-            min(len(self.search_space), int(12 * self.total_budget)), 
+            min(len(self.search_space), int(self.initial_alpha * self.total_budget)), 
             self.search_space, 
             key=lambda x: self.Gs.degree(x)
         )
@@ -249,6 +253,7 @@ class PCMCCEnvironment:
                 params_sum['alpha'] += com.state.alpha
             
             # 2. Create Object
+            new_budget = int(new_budget) # Ensure integer
             new_com = Community(next_id, list(new_nodes), new_budget)
             
             # 3. Set Parameters (Average)
@@ -346,11 +351,13 @@ class PCMCCEnvironment:
             # Use the pure function from core.evolution
             
             S1_input = copy.deepcopy(current_seed)
-            cOne = com.state.cr1
-            cTwo = com.state.cr2
             
+            # Use community-specific parameters (alpha, beta, cr1, cr2)
             S1 = evolution.crossover_and_mutate(
-                S1_input, SI, budget, cOne, cTwo, self.search_space, P_score
+                S1_input, SI, com.state.budget, 
+                com.state.cr1, com.state.cr2, 
+                self.search_space, P_score,
+                alpha=com.state.alpha
             )
             
             # 3. Local Search
@@ -368,7 +375,23 @@ class PCMCCEnvironment:
                 effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
                     S1, self.G, self.sn_nodes, com_and_fs, self.hop
                 )
-                
+            
+            # Check for improvement against Community's current best
+            # Note: We are comparing 'effectS1' (local fitness approximation) vs 'current_dpadv' (global or previous best)
+            # In a distributed setting, this comparison should ideally be consistent. 
+            # Assuming 'calculate_fitness' returns consistent DPADV metric.
+            
+            # Recalculate fitness for S1 just to be sure we have the metric
+            new_fitness = evaluator.DPADVEvaluator.calculate_fitness(
+                S1, self.G, self.sn_nodes, com_and_fs, self.hop
+            )
+
+            if new_fitness < com.state.current_dpadv:
+                com.update_best_solution(S1, new_fitness)
+                com.reset_stagnation()
+            else:
+                com.increment_stagnation()
+
             # Update metrics for observation
             com.calculate_metrics([S1, SI], self.Gs) # Use current pop sample
 
@@ -392,17 +415,73 @@ class PCMCCEnvironment:
         """
         Aggregates state to form MetaObservation.
         """
+        # --- Calculate Community Closeness ---
+        # Call logic from merger.py as requested
+        # 1. Prepare list of community nodes
+        com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
+        com_ids = list(self.communities.keys())
+        
+        # 2. Calculate Pairwise Scores using merger.calculate_connection_strength
+        closeness_map = defaultdict(lambda: defaultdict(float))
+        
+        # Optimize: Iterate only pairs that likely have edges? 
+        # Or iterating edges is faster than iterating all pairs O(N^2)
+        # Using the edge iteration method is still faster for sparse graphs, 
+        # but we want to invoke the specific function.
+        
+        # Approach A: Iterate edges and sum (Fast, logic inside merger.py function would be bypassed if we do it here)
+        # Approach B: Call merger.calculate_connection_strength(G, nodes_i, nodes_j) for all pairs.
+        # Since we want to "call merger.py", let's try to be smart. 
+        # We can detect neighbors first, then call the function for precise scoring.
+        
+        # Step 1: Fast neighbor detection
+        node_to_com = {}
+        for cid, nodes in com_nodes_map.items():
+            for n in nodes:
+                node_to_com[n] = cid
+                
+        neighbors = defaultdict(set)
+        for u, v in self.Gs.edges():
+            c1 = node_to_com.get(u)
+            c2 = node_to_com.get(v)
+            if c1 is not None and c2 is not None and c1 != c2:
+                neighbors[c1].add(c2)
+                neighbors[c2].add(c1)
+        
+        # Step 2: Call merger.py for identified neighbors
+        for c1, neighbor_set in neighbors.items():
+            for c2 in neighbor_set:
+                if c1 < c2: # Avoid double calc
+                    # CALL THE MERGER FUNCTION
+                    score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
+                    closeness_map[c1][c2] = score
+                    closeness_map[c2][c1] = score
+        
         summaries = []
         for com_id, com in self.communities.items():
-            # Calculate simple closeness (Jaccard of nodes for now, or edge density)
-            # Placeholder: just using random or 0
-            closeness = {} 
+            # Get calculated closeness
+            closeness = dict(closeness_map[com_id])
+            
+            # Update community's neighbor list while we are at it
+            com.update_neighbors(list(closeness.keys()))
+            
+            # Calculate Improvement Rate (Delta DPADV / Delta T)
+            # Use history: dpadv_history
+            imp_rate = 0.0
+            history = com.state.dpadv_history
+            if len(history) >= 2:
+                # Calculate drop from oldest recorded to current
+                # history[-1] is current (usually), history[0] is oldest in window
+                delta_f = history[0] - history[-1]
+                delta_t = len(history) - 1 # Generations elapsed in window
+                if delta_t > 0:
+                    imp_rate = delta_f / delta_t
             
             summaries.append(CommunitySummary(
                 community_id=com_id,
                 budget=com.state.budget,
                 best_dpadv=com.state.current_dpadv,
-                improvement_rate=0.0, # TODO: calculate from history
+                improvement_rate=imp_rate, 
                 diversity=com.state.diversity_score,
                 boundary_risk=len(com.state.boundary_nodes) / max(1, len(com.state.nodes)),
                 closeness_info=closeness
@@ -413,7 +492,8 @@ class PCMCCEnvironment:
             current_global_dpadv=self.global_best_dpadv,
             global_dpadv_history=self.global_dpadv_history,
             community_summaries=summaries,
-            merge_history=[] # TODO: maintain merge history
+            merge_history=[], # TODO: maintain merge history
+            parameter_history=self.parameter_history
         )
 
     def apply_community_action(self, community_id: int, action: CommunityAction):
@@ -474,13 +554,28 @@ class PCMCCEnvironment:
             print(f"Meta-Agent updating global baselines: {action.global_baselines}")
             for com in self.communities.values():
                 com.update_parameters(action.global_baselines, is_global_baseline=True)
+            
+            # Track Parameter History
+            # Store the NEW parameters and the CURRENT global score (as a baseline for their performance)
+            # Note: The true evaluation of these parameters happens in the NEXT generation.
+            # However, for simplicity in "evolutionary prompt", we pair them with the score at the end of this gen.
+            self.parameter_history.append({
+                'params': action.global_baselines,
+                'global_score': self.global_best_dpadv # Using current best as proxy
+            })
+            
+            # Sort by score (ascending - lower is better)
+            self.parameter_history.sort(key=lambda x: x['global_score'])
+            # Keep top 10
+            if len(self.parameter_history) > 10:
+                self.parameter_history = self.parameter_history[:10]
                 
         # 2. Update Budgets (Redistribution)
         if action.budget_adjustments:
             print(f"Meta-Agent adjusting budgets: {action.budget_adjustments}")
             for com_id, new_budget in action.budget_adjustments.items():
                 if com_id in self.communities:
-                    self.communities[com_id].state.budget = new_budget
+                    self.communities[com_id].state.budget = int(new_budget) # Ensure integer
                     # Note: Changing budget might require resizing population or seeds in next step
                     # This is a complex operation in real implementation (re-sampling or truncating)
                     

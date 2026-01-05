@@ -47,9 +47,15 @@ class LLMClient:
             self.model_obj = AutoModelForCausalLM.from_pretrained(
                 model_path, 
                 device_map="auto", 
-                torch_dtype="auto", 
+                dtype="auto", 
                 trust_remote_code=True
             )
+            
+            # Set seed for reproducibility if torch is available
+            if "torch" in globals():
+                torch.manual_seed(42)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(42)
             
             self.pipeline = pipeline(
                 "text-generation",
@@ -60,7 +66,7 @@ class LLMClient:
         except Exception as e:
             raise RuntimeError(f"Failed to load local model: {e}")
 
-    def get_completion(self, system_prompt: str, user_prompt: str, response_format: str = "json") -> str:
+    def get_completion(self, system_prompt: str, user_prompt: str, response_format: str = "json", temperature: float = 0.2) -> str:
         """
         Sends a prompt to the LLM and returns the response content.
         """
@@ -68,7 +74,7 @@ class LLMClient:
             return self._mock_response(system_prompt, user_prompt)
         
         elif self.provider == "local":
-            response = self._local_response(system_prompt, user_prompt, response_format)
+            response = self._local_response(system_prompt, user_prompt, response_format, temperature)
             if response_format == "json":
                 return self._clean_and_extract_json(response)
             return response
@@ -111,6 +117,8 @@ class LLMClient:
         # Debug print to see what LLM is actually returning
         # print(f"DEBUG: Raw LLM response: {text[:200]}..." if len(text) > 200 else f"DEBUG: Raw LLM response: {text}")
 
+        original_text = text
+        
         # Remove Markdown code blocks if present
         if "```json" in text:
             try:
@@ -129,6 +137,17 @@ class LLMClient:
         start = text.find("{")
         end = text.rfind("}")
         
+        # Handle Truncated JSON (missing closing brace)
+        if start != -1 and end == -1:
+            # Try appending '}' or '"}' to fix common truncation
+            for suffix in ["}", "\"}"]:
+                try:
+                    temp_text = text[start:] + suffix
+                    json.loads(temp_text)
+                    return temp_text
+                except:
+                    pass
+        
         if start != -1 and end != -1:
             extracted_text = text[start:end+1]
             
@@ -145,6 +164,17 @@ class LLMClient:
                         return truncated_text
                     except:
                         pass
+                # Handle comments (//) which strict JSON doesn't allow
+                # Simple regex to remove // comments
+                try:
+                    import re
+                    # Remove // comments but be careful about URLs (http://)
+                    # Pattern: match // not preceded by :
+                    no_comments = re.sub(r'(?<!:)\/\/.*', '', extracted_text)
+                    json.loads(no_comments)
+                    return no_comments
+                except:
+                    pass
                 pass
                 
             # 2. Try ast.literal_eval (handles Python-style dicts with single quotes, etc.)
@@ -156,8 +186,6 @@ class LLMClient:
                 pass
                 
             # 3. Simple manual fixes (last resort)
-            # Replace single quotes with double quotes (risky if content has quotes)
-            # This is a heuristic attempt
             try:
                 fixed_text = extracted_text.replace("'", '"').replace("True", "true").replace("False", "false").replace("None", "null")
                 json.loads(fixed_text)
@@ -169,13 +197,18 @@ class LLMClient:
             raise ValueError(f"Failed to parse JSON from extracted text: {extracted_text[:100]}...")
             
         # If no JSON object found, raise ValueError to be caught by caller
-        raise ValueError(f"No JSON object found in LLM response: {text[:100]}...")
+        raise ValueError(f"No JSON object found in LLM response: {original_text[:100]}...")
 
 
-    def _local_response(self, system_prompt: str, user_prompt: str, response_format: str) -> str:
+    def _local_response(self, system_prompt: str, user_prompt: str, response_format: str, temperature: float) -> str:
         """
         Generates a response using the locally loaded model.
         """
+        # Strengthen prompt for JSON generation
+        if response_format == "json":
+            system_prompt += "\nIMPORTANT: Output ONLY a valid JSON string. Do not include any explanations, preambles, or markdown formatting."
+            user_prompt += "\nRespond with raw JSON only."
+
         # Construct a prompt. This template might need adjustment based on the specific model (e.g. ChatML for Qwen)
         # For simplicity, we'll use a basic structure or the tokenizer's chat template if available.
         
@@ -193,9 +226,9 @@ class LLMClient:
 
         # Generation parameters
         gen_kwargs = {
-            "max_new_tokens": 1024,
+            "max_new_tokens": 2048,
             "do_sample": True,
-            "temperature": 0.75,
+            "temperature": temperature,
             "top_p": 0.9,
             "repetition_penalty": 1.1,
             "return_full_text": False,

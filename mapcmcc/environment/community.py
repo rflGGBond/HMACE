@@ -26,6 +26,7 @@ class CommunityState:
     
     # History
     dpadv_history: List[float] = field(default_factory=list)
+    solution_history: List[Dict[str, Any]] = field(default_factory=list) # List of {'seed': [], 'score': float}
     
     # Metrics
     diversity_score: float = 0.0
@@ -37,6 +38,7 @@ class CommunityState:
     
     # Status
     stage: str = "exploration" # exploration, exploitation, stagnation
+    stagnation_count: int = 0 # Generations without improvement
 
 class Community:
     def __init__(self, community_id: int, nodes: List[int], budget: int):
@@ -50,10 +52,29 @@ class Community:
         # For now, we assume the Environment passes the population to the evaluator,
         # and updates the Community object with the best result.
     
+    def reset_stagnation(self):
+        self.state.stagnation_count = 0
+        
+    def increment_stagnation(self):
+        self.state.stagnation_count += 1
+    
     def update_best_solution(self, seed_set: List[int], dpadv: float):
         self.state.current_seed_set = copy.deepcopy(seed_set)
         self.state.current_dpadv = dpadv
         self.state.dpadv_history.append(dpadv)
+        
+        # Add to solution history
+        new_solution = {'seed': copy.deepcopy(seed_set), 'score': dpadv}
+        # Avoid duplicates
+        if not any(s['seed'] == seed_set for s in self.state.solution_history):
+             self.state.solution_history.append(new_solution)
+        
+        # Sort by score (ascending for DPADV - lower is better)
+        self.state.solution_history.sort(key=lambda x: x['score'])
+        
+        # Keep top 10 solutions
+        if len(self.state.solution_history) > 10:
+             self.state.solution_history = self.state.solution_history[:10]
         
         # Maintain history length (e.g., last 20 gens)
         if len(self.state.dpadv_history) > 5:
@@ -155,6 +176,7 @@ class Community:
             "budget": self.state.budget,
             "current_dpadv": self.state.current_dpadv,
             "dpadv_history": self.state.dpadv_history,
+            "solution_history": self.state.solution_history,
             "diversity_score": self.state.diversity_score,
             "top_k_score_nodes": self.state.top_k_score_nodes[:20], # Top 20
             "current_seed_set": self.state.current_seed_set,
@@ -168,5 +190,6 @@ class Community:
                 "beta": self.state.beta,
                 "alpha": self.state.alpha
             },
+            "stagnation_count": self.state.stagnation_count,
             "global_dpadv": global_dpadv
         }
