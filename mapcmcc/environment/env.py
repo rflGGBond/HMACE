@@ -50,7 +50,7 @@ class PCMCCEnvironment:
         
         # PCMCC Termination Logic Attributes
         self.s_g = 3
-        self.theta = 1.0
+        self.theta = 0.01
         self.termination_beta = 2
         self.e_g_b = None # Generation when global evolution begins (1 community)
         
@@ -755,6 +755,7 @@ class PCMCCEnvironment:
             # Simulate one step for ALL communities using the new global parameters
             
             sim_global_seeds = []
+            sim_local_seeds = {} # Store per-community simulated seeds
             sim_params = action.global_baselines
             
             # Pre-calculate shared metrics
@@ -801,6 +802,7 @@ class PCMCCEnvironment:
                     S1_sim = S1_sim_new
                 
                 sim_global_seeds.extend(S1_sim)
+                sim_local_seeds[com_id] = S1_sim # Store for potential update
                 
             # Evaluate Global Result
             sim_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
@@ -811,19 +813,34 @@ class PCMCCEnvironment:
             if sim_global_dpadv < self.global_best_dpadv:
                  print(f"  -> Global Simulation Successful! New Baselines improved Global DPADV ({self.global_best_dpadv:.4f} -> {sim_global_dpadv:.4f}). Accepted.")
                  
-                 # Apply Parameters
+                 # 1. Apply Parameters
                  for com in self.communities.values():
                      com.update_parameters(action.global_baselines, is_global_baseline=True)
+                 
+                 # 2. Apply Better Solution (Global & Local)
+                 self.global_best_dpadv = sim_global_dpadv
+                 self.global_best_seed = copy.deepcopy(sim_global_seeds)
+                 self.last_improved_gen = self.current_gen
+                 
+                 # Update each community's best solution with the simulated one
+                 # Note: We don't have the exact local fitness for S1_sim here (we optimized for Global).
+                 # But we should still update the seed set.
+                 # We can calculate local fitness if needed, or just set it.
+                 for com_id, s1_sim in sim_local_seeds.items():
+                     com = self.communities[com_id]
+                     # Calculate local fitness for consistency
+                     com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
+                     local_fitness = evaluator.DPADVEvaluator.calculate_fitness(
+                        s1_sim, self.G, self.sn_nodes, com_and_fs, self.hop
+                     )
+                     com.update_best_solution(s1_sim, local_fitness)
+                     com.reset_stagnation()
                  
                  # Track Parameter History
                  self.parameter_history.append({
                      'params': action.global_baselines,
                      'global_score': sim_global_dpadv # Use the simulated score which is accurate
                  })
-                 
-                 # OPTIONAL: We could technically accept the simulated seeds here to jump-start evolution,
-                 # but for consistency with 'apply_meta_action' role (parameter tuning), we just set params.
-                 # The next real step() will likely reproduce this gain.
                  
                  self.parameter_history.sort(key=lambda x: x['global_score'])
                  if len(self.parameter_history) > 10:
@@ -835,11 +852,63 @@ class PCMCCEnvironment:
         # 2. Update Budgets (Redistribution)
         if action.budget_adjustments:
             print(f"Meta-Agent adjusting budgets: {action.budget_adjustments}")
-            for com_id, new_budget in action.budget_adjustments.items():
-                if com_id in self.communities:
-                    self.communities[com_id].state.budget = int(new_budget) # Ensure integer
-                    # Note: Changing budget might require resizing population or seeds in next step
-                    # This is a complex operation in real implementation (re-sampling or truncating)
+            
+            # 1. Apply Adjustments
+            temp_budgets = {}
+            for com_id, com in self.communities.items():
+                current_b = com.state.budget
+                adjustment = action.budget_adjustments.get(com_id, 0)
+                # Apply delta and enforce minimum 1
+                new_b = max(1, current_b + int(adjustment))
+                temp_budgets[com_id] = new_b
+            
+            # 2. Normalize to Total Budget (k)
+            current_total = sum(temp_budgets.values())
+            target_total = self.total_budget
+            
+            if current_total != target_total and current_total > 0:
+                print(f"  -> Normalizing budgets: Sum {current_total} != Target {target_total}")
+                normalized_budgets = {}
+                running_sum = 0
+                
+                # Sort by value to minimize rounding impact on small communities
+                sorted_items = sorted(temp_budgets.items(), key=lambda x: x[1])
+                
+                for i, (cid, val) in enumerate(sorted_items):
+                    if i == len(sorted_items) - 1:
+                        # Last one takes the remainder
+                        new_val = target_total - running_sum
+                    else:
+                        # Proportional share
+                        new_val = int(round((val / current_total) * target_total))
+                        
+                    # Ensure at least 1 (unless target_total is 0, which shouldn't happen)
+                    new_val = max(1, new_val)
+                    normalized_budgets[cid] = new_val
+                    running_sum += new_val
+                
+                # Final check if max(1) pushed us over
+                final_sum = sum(normalized_budgets.values())
+                if final_sum > target_total:
+                    # Reduce from the largest until we match
+                    diff = final_sum - target_total
+                    while diff > 0:
+                        # Find largest > 1
+                        candidates = [cid for cid, b in normalized_budgets.items() if b > 1]
+                        if not candidates: break # Cannot reduce further
+                        
+                        # Pick random or max
+                        target_cid = max(candidates, key=lambda c: normalized_budgets[c])
+                        normalized_budgets[target_cid] -= 1
+                        diff -= 1
+                
+                # Apply Normalized Budgets
+                for cid, b in normalized_budgets.items():
+                    self.communities[cid].state.budget = b
+            else:
+                # Apply Temp Budgets directly if sum matches (or if something weird happened)
+                for cid, b in temp_budgets.items():
+                     self.communities[cid].state.budget = b
                     
         # 3. Execute Merges (Already handled via set_merge_suggestions, but ensuring consistency)
         if action.merge_suggestions:

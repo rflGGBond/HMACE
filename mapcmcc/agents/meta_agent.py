@@ -31,6 +31,10 @@ class MetaAgent(BaseAgent):
         struggling_info_str = f"Communities needing merge (Low Improvement Rate <= Target): {struggling_communities}"
         print(f"Meta-Agent Analysis: {struggling_info_str}")
 
+        # Get valid IDs for prompt grounding
+        valid_ids = [s.community_id for s in observation.community_summaries]
+        valid_ids_str = f"AVAILABLE COMMUNITY IDs: {valid_ids}"
+
         # Truncate history to prevent prompt overflow
         if "global_dpadv_history" in obs_dict and isinstance(obs_dict["global_dpadv_history"], list):
             obs_dict["global_dpadv_history"] = obs_dict["global_dpadv_history"][-10:] # Keep only last 10
@@ -64,6 +68,9 @@ class MetaAgent(BaseAgent):
         - alpha (1.0-20.0): Search Space Reduction Factor.
         
         CRITICAL INSIGHT:
+        {valid_ids_str}
+        These are valid communities.
+
         {struggling_info_str}
         These communities are improving too slowly based on their budget allocation. 
         PRIORITIZE merging these communities with their strongly connected neighbors (check 'closeness_info') to pool resources.
@@ -73,14 +80,15 @@ class MetaAgent(BaseAgent):
         
         TASK INSTRUCTIONS:
         1. PARAMETER OPTIMIZATION:
-           - Analyze the parameter history.
-           - Select high-performing sets, crossover and mutate them to generate new 'global_baselines'.
+        - Analyze the parameter history.
+        - Select high-performing sets, crossover and mutate them to generate new 'global_baselines'.
            
         2. COMMUNITY MERGING:
-           - Review the 'Struggling Communities' list above.
-           - Check 'closeness_info' in the observation to find strongly connected neighbors.
-           - PROPOSE MERGES for struggling communities to pool resources and escape local optima.
-           - Add pairs to 'merge_suggestions' (e.g., [[0, 2]]).
+        - Review the 'AVAILABLE COMMUNITY IDs' and 'Struggling Communities' list above.
+        - Check 'closeness_info' in the observation to find strongly connected neighbors.
+        - PROPOSE MERGES for struggling communities to pool resources and escape local optima.
+        - Add pairs to 'merge_suggestions' (e.g., [[0, 2]]).
+        - WARNING: You MUST ONLY propose merges between IDs listed in 'AVAILABLE COMMUNITY IDs'. Do not hallucinate IDs.
            
         3. BUDGET REDISTRIBUTION:
            - Move budget to communities that need it if necessary.
@@ -129,8 +137,12 @@ class MetaAgent(BaseAgent):
                 id1, id2 = int(pair[0]), int(pair[1])
                 
                 # Check 1: Communities exist
-                if id1 not in com_lookup or id2 not in com_lookup:
-                    print(f"Merge rejected: Community {id1} or {id2} not found.")
+                missing = []
+                if id1 not in com_lookup: missing.append(id1)
+                if id2 not in com_lookup: missing.append(id2)
+                
+                if missing:
+                    print(f"Merge rejected: Community {missing} not found (Request: {id1}-{id2}).")
                     continue
                 
                 # Check 2: Heuristic Score (Connection Strength)

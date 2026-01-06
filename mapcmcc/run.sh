@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="email-Eu-core"
+GRAPHS="facebook"
 TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20

@@ -266,7 +266,7 @@ def main():
             plt.xticks(K_VALUES)
             plt.tight_layout()
             
-            plot_path_coicm = os.path.join(output_fig_dir_coicm, f'COICM_{GRAPH_NAME}.png')
+            plot_path_coicm = os.path.join(output_fig_dir_coicm, f'COICM_{GRAPH_NAME}_{args.llm_model}.png')
             plt.savefig(plot_path_coicm)
             plt.close()
             print(f"Saved COICM plot to {plot_path_coicm}")
@@ -292,7 +292,7 @@ def main():
             plt.xticks(K_VALUES)
             plt.tight_layout()
             
-            plot_path_mcicm = os.path.join(output_fig_dir_mcicm, f'MCICM_{GRAPH_NAME}.png')
+            plot_path_mcicm = os.path.join(output_fig_dir_mcicm, f'MCICM_{GRAPH_NAME}_{args.llm_model}.png')
             plt.savefig(plot_path_mcicm)
             plt.close()
             print(f"Saved MCICM plot to {plot_path_mcicm}")
