@@ -19,6 +19,7 @@ class PCMCCEnvironment:
         self.initial_num_communities = num_communities
         self.is_directed = is_directed
         self.hop = 2 # Default hop count
+        self.Ni = 20 # Subpopulation size (Number of individuals per island)
         self.initial_alpha = 12.0 # Default search space reduction factor
         
         # Load Graph
@@ -403,67 +404,107 @@ class PCMCCEnvironment:
             current_seed = com.state.current_seed_set
             if not current_seed: continue
             
-            budget = com.state.budget
-            # Construct a small population for evolution (if not maintaining persistent pop)
-            # For this step, we treat 'current_seed' as the best individual S1
-            # and generate a temporary 'SI' to cross with.
-            
-            # 1. Generate SI (Mutation of S1)
-            SI = copy.deepcopy(current_seed)
-            # Simple mutation: replace 1 random node
-            if self.search_space:
-                 candidates = list(set(self.search_space) - set(SI))
-                 if candidates:
-                     idx = random.randint(0, len(SI)-1)
-                     SI[idx] = random.choice(candidates)
-            
-            # 2. Crossover (S1 + SI) -> Offspring
-            # Use the pure function from core.evolution
-            
-            S1_input = copy.deepcopy(current_seed)
-            
-            # Use community-specific parameters (alpha, beta, cr1, cr2)
-            S1 = evolution.crossover_and_mutate(
-                S1_input, SI, com.state.budget, 
-                com.state.cr1, com.state.cr2, 
-                self.search_space, P_score,
-                alpha=com.state.alpha
-            )
-            
-            # 3. Local Search
-            # Use full local search logic matching PCMCC
+            # Pre-calculate shared set for this community
             com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
             gama_com = self.search_space
             
-            S1_new = evolution.local_search(
-                S1, self.G, com_and_fs, self.hop, N_prob, gama_com
-            )
-            
-            # If changed, update and re-evaluate
-            if S1_new != S1:
-                S1 = S1_new
-                effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
-                    S1, self.G, self.sn_nodes, com_and_fs, self.hop
-                )
-            
-            # Check for improvement against Community's current best
-            # Note: We are comparing 'effectS1' (local fitness approximation) vs 'current_dpadv' (global or previous best)
-            # In a distributed setting, this comparison should ideally be consistent. 
-            # Assuming 'calculate_fitness' returns consistent DPADV metric.
-            
-            # Recalculate fitness for S1 just to be sure we have the metric
-            new_fitness = evaluator.DPADVEvaluator.calculate_fitness(
-                S1, self.G, self.sn_nodes, com_and_fs, self.hop
-            )
+            # --- Population Initialization (if needed) ---
+            if not com.state.population:
+                com.state.population = []
+                com.state.population_scores = []
+                
+                # 1. First individual is the current best
+                com.state.population.append(copy.deepcopy(current_seed))
+                score = evaluator.DPADVEvaluator.calculate_fitness(current_seed, self.G, self.sn_nodes, com_and_fs, self.hop)
+                com.state.population_scores.append(score)
+                
+                # 2. Others are mutations
+                for _ in range(self.Ni - 1):
+                    mutant = copy.deepcopy(current_seed)
+                    if self.search_space:
+                         candidates = list(set(self.search_space) - set(mutant))
+                         if candidates:
+                             idx = random.randint(0, len(mutant)-1)
+                             mutant[idx] = random.choice(candidates)
+                    com.state.population.append(mutant)
+                    score = evaluator.DPADVEvaluator.calculate_fitness(mutant, self.G, self.sn_nodes, com_and_fs, self.hop)
+                    com.state.population_scores.append(score)
 
-            if new_fitness < com.state.current_dpadv:
-                com.update_best_solution(S1, new_fitness)
+            # --- Population Evolution Loop (Ni iterations) ---
+            # Using Legacy Logic: Iterate through population, cross with best
+            
+            # Find index of best individual (S1)
+            best_idx = com.state.population_scores.index(min(com.state.population_scores))
+            
+            for I in range(self.Ni):
+                if I == best_idx: continue
+                
+                # Identify S1 (Best) and SI (Target)
+                # Note: We fetch S1 dynamically as it might have been updated in previous iterations
+                S1_input = copy.deepcopy(com.state.population[best_idx])
+                SI = copy.deepcopy(com.state.population[I])
+                
+                # Crossover & Mutation
+                # Using helper which implements the logic: 
+                #   Two-way/One-way crossover based on cr1/cr2
+                #   Conflict resolution (mutation)
+                S1_new, SI_new = evolution.crossover_and_mutate(
+                    S1_input, SI, com.state.budget, 
+                    com.state.cr1, com.state.cr2, 
+                    self.search_space, P_score,
+                    alpha=com.state.alpha
+                )
+                
+                # Evaluate Offspring
+                effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
+                    S1_new, self.G, self.sn_nodes, com_and_fs, self.hop
+                )
+                
+                effectSI = evaluator.DPADVEvaluator.calculate_fitness(
+                    SI_new, self.G, self.sn_nodes, com_and_fs, self.hop
+                )
+                
+                # Update Population (Greedy Selection)
+                
+                # 1. Check if S1 offspring improved global best
+                if effectS1 < com.state.population_scores[best_idx]:
+                    com.state.population[best_idx] = S1_new
+                    com.state.population_scores[best_idx] = effectS1
+                    
+                # 2. Check if SI offspring improved local individual
+                if effectSI < com.state.population_scores[I]:
+                    com.state.population[I] = SI_new
+                    com.state.population_scores[I] = effectSI
+            
+            # End of Ni Loop
+            
+            # 4. Local Search (Apply to the best candidate in population)
+            final_best_idx = com.state.population_scores.index(min(com.state.population_scores))
+            search_start_node = copy.deepcopy(com.state.population[final_best_idx])
+            
+            optimized_seed = evolution.local_search(
+                search_start_node, self.G, com_and_fs, self.hop, N_prob, gama_com
+            )
+            
+            # 5. Final Evaluation & Update
+            final_fitness = evaluator.DPADVEvaluator.calculate_fitness(
+                optimized_seed, self.G, self.sn_nodes, com_and_fs, self.hop
+            )
+            
+            # Update Population with optimized result
+            if final_fitness < com.state.population_scores[final_best_idx]:
+                com.state.population[final_best_idx] = optimized_seed
+                com.state.population_scores[final_best_idx] = final_fitness
+            
+            # Check for improvement against Community's historical best
+            if final_fitness < com.state.current_dpadv:
+                com.update_best_solution(optimized_seed, final_fitness)
                 com.reset_stagnation()
+                com.calculate_metrics(com.state.population, self.Gs) 
             else:
                 com.increment_stagnation()
-
-            # Update metrics for observation
-            com.calculate_metrics([S1, SI], self.Gs) # Use current pop sample
+                # Update metrics using current population
+                com.calculate_metrics(com.state.population, self.Gs)
 
         # 2. Update Global State
         # Correctly calculate global DPADV by combining seeds from all communities
@@ -616,7 +657,7 @@ class PCMCCEnvironment:
             
             # B. Crossover (using NEW parameters)
             S1_input = copy.deepcopy(current_seed)
-            S1_sim = evolution.crossover_and_mutate(
+            S1_sim, _ = evolution.crossover_and_mutate(
                 S1_input, SI, com.state.budget, 
                 sim_params.get('cr1', com.state.cr1), 
                 sim_params.get('cr2', com.state.cr2), 
@@ -688,8 +729,19 @@ class PCMCCEnvironment:
                 self.last_improved_gen = self.current_gen # Reset patience
             else:
                 # Reject: Do nothing (Revert is implicit by not applying)
-                print(f"Agent {community_id} candidate rejected (DPADV: {new_global_dpadv} >= {self.global_best_dpadv}).")
-                pass
+                print(f"Agent {community_id} candidate rejected for GLOBAL best (DPADV: {new_global_dpadv:.4f} >= {self.global_best_dpadv:.4f}).")
+                
+                # --- Local Fallback Check ---
+                # Even if it fails globally, check if it improves the community locally
+                com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
+                local_fitness = evaluator.DPADVEvaluator.calculate_fitness(
+                    action.candidate_seed_set, self.Gs, self.sn_nodes, com_and_fs, self.hop
+                )
+                
+                if local_fitness < com.state.current_dpadv:
+                     print(f"  -> But ACCEPTED for LOCAL improvement (Local DPADV: {com.state.current_dpadv:.4f} -> {local_fitness:.4f}).")
+                     com.update_best_solution(action.candidate_seed_set, local_fitness)
+                     com.reset_stagnation()
 
     def check_termination(self, max_gen: int) -> bool:
         """
@@ -783,7 +835,7 @@ class PCMCCEnvironment:
                 # Note: Meta-Agent sets baselines, but communities might have their own overrides.
                 # Here we assume Global Baseline overrides everything for the simulation to test its pure effect.
                 S1_input = copy.deepcopy(current_seed)
-                S1_sim = evolution.crossover_and_mutate(
+                S1_sim, _ = evolution.crossover_and_mutate(
                     S1_input, SI, com.state.budget, 
                     sim_params.get('cr1', com.state.cr1), 
                     sim_params.get('cr2', com.state.cr2), 

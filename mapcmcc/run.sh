@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="facebook"
+GRAPHS="HR"
 TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20
@@ -11,9 +11,9 @@ MC_RUNS=100
 # LLM Configuration
 # Options: local, openai
 LLM_PROVIDER="local" 
-# LLM_MODEL="qwen2.5-7b-instruct" 
+# LLM_MODEL="gpt-4o" 
 LLM_MODEL="Qwen2.5-7B-Instruct"
-API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8" 
+API_KEY="sk-20L54633d745bf1b62dd4e22dc976f663fbc69695e4WSh1S" 
 MODEL_ROOT="../../models"
 
 # Suppress tokenizers warning when forking

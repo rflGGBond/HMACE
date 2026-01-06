@@ -24,6 +24,10 @@ class CommunityState:
     current_seed_set: List[int] = field(default_factory=list)
     current_dpadv: float = float('inf')
     
+    # Population (for diversity)
+    population: List[List[int]] = field(default_factory=list)
+    population_scores: List[float] = field(default_factory=list)
+    
     # History
     dpadv_history: List[float] = field(default_factory=list)
     solution_history: List[Dict[str, Any]] = field(default_factory=list) # List of {'seed': [], 'score': float}

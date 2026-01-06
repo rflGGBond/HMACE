@@ -33,6 +33,7 @@ class MetaAgent(BaseAgent):
 
         # Get valid IDs for prompt grounding
         valid_ids = [s.community_id for s in observation.community_summaries]
+        num_communities = len(valid_ids)
         valid_ids_str = f"AVAILABLE COMMUNITY IDs: {valid_ids}"
 
         # Truncate history to prevent prompt overflow
@@ -57,27 +58,24 @@ class MetaAgent(BaseAgent):
             for m in obs_dict["merge_history"]:
                 history_str += f"- Merged {m}\n"
 
-        system_prompt = f"""
-        You are the Meta Agent in the MAPCMCC evolutionary algorithm. 
-        Your task is to coordinate the global optimization process by tuning parameters or MERGING communities to minimize the Global DPADV score by coordinating multiple communities.
+        # --- Dynamic Task Instructions ---
+        if num_communities == 1:
+            task_instructions = """
+        TASK INSTRUCTIONS:
+        1. PARAMETER OPTIMIZATION (SOLE FOCUS):
+        - You are now in the GLOBAL EVOLUTION PHASE with a SINGLE community.
+        - Your ONLY goal is to fine-tune the parameters to squeeze out the last bit of performance.
+        - Analyze the parameter history deeply.
+        - Select high-performing sets, crossover and mutate them to generate new 'global_baselines'.
         
-        PARAMETER DEFINITIONS:
-        - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover.
-        - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover.
-        - beta (1.0-10.0): Local Search Intensity.
-        - alpha (1.0-20.0): Search Space Reduction Factor.
+        2. COMMUNITY MERGING:
+        - DISABLED. There is only one community left. Return an empty list [].
         
-        CRITICAL INSIGHT:
-        {valid_ids_str}
-        These are valid communities.
-
-        {struggling_info_str}
-        These communities are improving too slowly based on their budget allocation. 
-        PRIORITIZE merging these communities with their strongly connected neighbors (check 'closeness_info') to pool resources.
-        
-        In-context examples:
-        {history_str}
-        
+        3. BUDGET REDISTRIBUTION:
+        - DISABLED. Only one community. Return an empty dictionary {}.
+            """
+        else:
+            task_instructions = f"""
         TASK INSTRUCTIONS:
         1. PARAMETER OPTIMIZATION:
         - Analyze the parameter history.
@@ -91,8 +89,32 @@ class MetaAgent(BaseAgent):
         - WARNING: You MUST ONLY propose merges between IDs listed in 'AVAILABLE COMMUNITY IDs'. Do not hallucinate IDs.
            
         3. BUDGET REDISTRIBUTION:
-           - Move budget to communities that need it if necessary.
-           - 'budget_adjustments' should be a dictionary where keys are community IDs and values are the adjustment amounts (positive to add, negative to reduce).
+        - Move budget to communities that need it if necessary.
+        - 'budget_adjustments' should be a dictionary where keys are community IDs and values are the adjustment amounts (positive to add, negative to reduce).
+            """
+
+        system_prompt = f"""
+        You are the Meta Agent in the MAPCMCC evolutionary algorithm. 
+        Your task is to coordinate the global optimization process by tuning parameters or MERGING communities to minimize the Global DPADV score by coordinating multiple communities.
+        
+        PARAMETER DEFINITIONS:
+        - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover.
+        - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover.
+        - beta (1.0-20.0): Local Search Intensity.
+        - alpha (1.0-30.0): Search Space Reduction Factor.
+        
+        CRITICAL INSIGHT:
+        {valid_ids_str}
+        These are valid communities.
+        
+        {struggling_info_str}
+        These communities are improving too slowly based on their budget allocation. 
+        PRIORITIZE merging these communities with their strongly connected neighbors (check 'closeness_info') to pool resources.
+        
+        In-context examples:
+        {history_str}
+        
+        {task_instructions}
         
         OUTPUT RULES:
         1. Return ONLY valid JSON.

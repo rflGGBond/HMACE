@@ -85,7 +85,7 @@ class LLMClient:
             except ImportError:
                 raise ImportError("OpenAI provider requires 'openai' package. Please install it.")
 
-            client = openai.OpenAI(api_key=self.api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+            client = openai.OpenAI(api_key=self.api_key, base_url="https://api.gptsapi.net/v1")
             
             # Prepare messages
             messages = [

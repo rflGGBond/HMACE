@@ -84,13 +84,13 @@ class CommunityAgent(BaseAgent):
                 step2_system_prompt = f"""
                 You decided to 'adjust_parameters'.
                 
-                TASK: Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-10.0), 'alpha' (1.0-20.0).
+                TASK: Tune 'cr1', 'cr2' (0.0-1.0), 'beta' (1.0-20.0), 'alpha' (1.0-30.0).
 
                 PARAMETER DEFINITIONS:
                 - cr1 (0.0-1.0): Crossover Rate 1. Probability of performing crossover. Higher values mean more gene exchange.
                 - cr2 (0.0-1.0): Crossover Rate 2. Probability of two-way crossover vs one-way.
-                - beta (1.0-10.0): Local Search Intensity. Higher values imply more aggressive local optimization.
-                - alpha (1.0-20.0): Search Space Reduction Factor. Determines the pool size of candidate nodes (alpha * budget). Higher values allow wider exploration but slower convergence.
+                - beta (1.0-20.0): Local Search Intensity. Higher values imply more aggressive local optimization.
+                - alpha (1.0-30.0): Search Space Reduction Factor. Determines the pool size of candidate nodes (alpha * budget). Higher values allow wider exploration but slower convergence.
                 
                 OUTPUT RULES:
                 1. Return ONLY valid JSON.

@@ -228,7 +228,7 @@ def calculate_population_effect(community_id, subpop_id, Ni, population, G, SN, 
 def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alpha=None):
     """
     Pure function to perform crossover and mutation on two individuals.
-    Returns the new offspring S1.
+    Returns both new offspring (S1, SI).
     """
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
@@ -242,46 +242,58 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
             current_pool = com_sn[:pool_size]
     
     repeatS1 = 0
-    repeatSI = 0 # Not used for S1 return but kept for logic consistency if we wanted both
+    repeatSI = 0
 
     for J in range(len(S1)):
         if random.random() < cOne:
-            if random.random() < cTwo:  # two-way cross
+            if random.random() < cTwo:  # two-way cross (Swap)
                 temp = S1[J]
+                
+                # S1 takes from SI
                 if SI[J] not in S1 or SI[J] == S1[J]:
                     S1[J] = SI[J]
                 else:
                     S1[J] = -1
                     repeatS1 += 1
                 
-                # SI logic omitted as we only return S1 offspring here
-            else:  # one-way cross
+                # SI takes from S1 (temp)
+                if temp not in SI or temp == SI[J]:
+                    SI[J] = temp
+                else:
+                    SI[J] = -1
+                    repeatSI += 1
+                    
+            else:  # one-way cross (Best -> m)
+                # SI takes from S1, S1 remains unchanged
                 if S1[J] not in SI or S1[J] == SI[J]:
-                    SI[J] = S1[J] # This modifies SI, but we care about S1 here?
-                    # Wait, original logic:
-                    # One-way cross: S1 stays same? Or SI takes from S1?
-                    # Original: if S1[J] not in SI... SI[J] = S1[J].
-                    # This implies SI is the one being modified in one-way?
-                    # Let's check original loop.
-                    # Yes, one-way modifies SI.
-                    # But in `_evolve_subpopulation_step`, we update BOTH S1 and SI in shared memory.
-                    pass 
+                    SI[J] = S1[J]
+                else:
+                    SI[J] = -1
+                    repeatSI += 1
                     
     # Fix duplicates S1
     if repeatS1 != 0:
         candidates = list(set(current_pool) - set(S1))
         if candidates:
-            # Re-weight P_score for candidates? Or just pass full P_score and let sample handle it?
-            # sample function uses w[u], so we need P_score to contain candidates.
-            # Assuming P_score has all nodes in com_sn.
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
             for e in range(budget):
                 if S1[e] == -1 and J < len(replaceS1):
                     S1[e] = replaceS1[J]
                     J += 1
+                    
+    # Fix duplicates SI
+    if repeatSI != 0:
+        candidates = list(set(current_pool) - set(SI))
+        if candidates:
+            replaceSI = sample(candidates, P_score, repeatSI)
+            J = 0
+            for e in range(budget):
+                if SI[e] == -1 and J < len(replaceSI):
+                    SI[e] = replaceSI[J]
+                    J += 1
     
-    return S1
+    return S1, SI
 
 def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alpha=None):
     """
