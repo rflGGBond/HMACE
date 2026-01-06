@@ -211,104 +211,160 @@ class PCMCCEnvironment:
             )
             self.communities[i].update_best_solution(initial_seed, score)
 
-    def _execute_merges(self):
+    def _execute_merges(self, strict_validation: bool = True):
         """
         Executes the pending merge suggestions by merging Community objects.
-        This is a simplified implementation that replaces the complex legacy merger.py
-        logic which relied on specific population structures not fully present here.
+        If strict_validation=True (Meta-Agent), implements weighted gain evaluation, positive gain filtering, and Top-2 logic.
+        If strict_validation=False (Heuristic), executes merges directly (assumes they are pre-validated by rules).
         """
         if not self.pending_merge_suggestions:
             return
 
-        print(f"Executing Meta-Agent Merges: {self.pending_merge_suggestions}")
+        print(f"Executing Merges (Pending: {len(self.pending_merge_suggestions)}, Strict: {strict_validation})...")
         
-        # Track which communities are being merged to avoid double-merging
-        merged_ids = set()
-        new_communities = {}
+        evaluated_suggestions = [] # List of tuples: (gain, merge_group, new_com_obj)
         
-        # Generate new ID starting after the highest current ID
-        next_id = max(self.communities.keys()) + 1
+        # Helper map for nodes (for closeness calculation)
+        com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
         
         for merge_group in self.pending_merge_suggestions:
-            # Filter out invalid IDs or already merged ones
-            valid_group = [
-                cid for cid in merge_group 
-                if cid in self.communities and cid not in merged_ids
-            ]
+            # Filter out invalid IDs
+            valid_group = [cid for cid in merge_group if cid in self.communities]
             
             if len(valid_group) < 2:
                 continue
+            
+            # --- Logic for Strict Validation (Meta-Agent) ---
+            if strict_validation:
+                # --- Filter 1: Closeness Check ---
+                closeness_sum = 0
+                for i in range(len(valid_group)):
+                    for j in range(i + 1, len(valid_group)):
+                        c1, c2 = valid_group[i], valid_group[j]
+                        score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
+                        closeness_sum += score
                 
-            # Mark as merged
-            for cid in valid_group:
-                merged_ids.add(cid)
+                if closeness_sum <= 0:
+                    print(f"  -> REJECTED Group {valid_group}: Closeness <= 0 ({closeness_sum})")
+                    continue
             
-            # Create New Community
-            # 1. Merge Nodes
+            # --- Preparation (Common) ---
+            total_budget = 0
+            weighted_baseline_score = 0
+            
             new_nodes = set()
-            new_budget = 0
             combined_seed = []
-            
-            # Helper to average parameters
             params_sum = {'cr1': 0, 'cr2': 0, 'beta': 0, 'alpha': 0}
             
+            # First pass: Calculate Total Budget for weights
+            for cid in valid_group:
+                total_budget += self.communities[cid].state.budget
+            
+            if total_budget == 0: continue # Should not happen
+            
+            # Second pass: Accumulate data and calculate baseline
             for cid in valid_group:
                 com = self.communities[cid]
                 new_nodes.update(com.state.nodes)
-                new_budget += com.state.budget
                 combined_seed.extend(com.state.current_seed_set)
                 
                 params_sum['cr1'] += com.state.cr1
                 params_sum['cr2'] += com.state.cr2
                 params_sum['beta'] += com.state.beta
                 params_sum['alpha'] += com.state.alpha
+                
+                # Weighted Score contribution
+                weight = com.state.budget / total_budget
+                weighted_baseline_score += com.state.current_dpadv * weight
             
-            # 2. Create Object
-            new_budget = int(new_budget) # Ensure integer
-            new_com = Community(next_id, list(new_nodes), new_budget)
+            # Create Candidate New Community
+            new_budget = int(total_budget)
+            new_com = Community(-1, list(new_nodes), new_budget)
             
-            # 3. Set Parameters (Average)
+            # Set Parameters (Average)
             count = len(valid_group)
             new_com.state.cr1 = params_sum['cr1'] / count
             new_com.state.cr2 = params_sum['cr2'] / count
             new_com.state.beta = params_sum['beta'] / count
             new_com.state.alpha = params_sum['alpha'] / count
             
-            # 4. Set Seed (Truncate to budget if needed)
-            # Ensure unique nodes in seed
+            # Set Seed (Truncate/Fill)
             unique_seed = list(set(combined_seed))
             if len(unique_seed) > new_budget:
-                # Keep the best ones? For now, random or just first N
                 unique_seed = unique_seed[:new_budget]
             elif len(unique_seed) < new_budget:
-                # Fill with random from new_nodes
                 candidates = list(new_nodes - set(unique_seed))
                 needed = new_budget - len(unique_seed)
                 if candidates:
                     unique_seed.extend(random.sample(candidates, min(len(candidates), needed)))
             
-            # Recalculate fitness for the new seed
-            score = evaluator.DPADVEvaluator.calculate_fitness(
+            # Calculate New Fitness
+            new_score = evaluator.DPADVEvaluator.calculate_fitness(
                 unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
             )
-            new_com.update_best_solution(unique_seed, score)
+            new_com.update_best_solution(unique_seed, new_score)
             
-            new_communities[next_id] = new_com
+            # Calculate Gain
+            gain = weighted_baseline_score - new_score
+            
+            if strict_validation:
+                print(f"  -> Evaluation: Group {valid_group} | Closeness: {closeness_sum:.2f} | Baseline: {weighted_baseline_score:.4f} | New: {new_score:.4f} | Gain: {gain:.4f}")
+                
+                # --- Filter 2: Gain Check ---
+                if gain > 0:
+                    evaluated_suggestions.append((gain, valid_group, new_com))
+                else:
+                    print(f"  -> REJECTED: Gain <= 0")
+            else:
+                # Heuristic Mode: Accept directly (with fake gain for sorting structure compatibility)
+                # Or just execute immediately. To reuse the execution loop, we append with high priority.
+                print(f"  -> Heuristic Accepted: Group {valid_group} | New: {new_score:.4f}")
+                evaluated_suggestions.append((float('inf'), valid_group, new_com))
+
+        # 2. Sort by Gain (Descending)
+        # For Heuristic, they all have inf gain, so order is preserved.
+        # For Strict, they are sorted by real gain.
+        evaluated_suggestions.sort(key=lambda x: x[0], reverse=True)
+        
+        # 3. Execute Logic
+        merged_ids = set()
+        new_communities = {}
+        executed_count = 0
+        next_id = max(self.communities.keys()) + 1
+        
+        for gain, group, new_com_obj in evaluated_suggestions:
+            # Strict mode: Top-2 limit
+            if strict_validation and executed_count >= 2:
+                break
+                
+            # Check for conflict
+            if any(cid in merged_ids for cid in group):
+                continue
+                
+            # Execute
+            print(f"  -> EXECUTING Merge: Group {group} (Gain: {gain:.4f}) -> New ID {next_id}")
+            
+            # Mark IDs as merged
+            for cid in group:
+                merged_ids.add(cid)
+            
+            # Finalize New Community
+            new_com_obj.state.community_id = next_id
+            new_communities[next_id] = new_com_obj
             next_id += 1
+            executed_count += 1
             
-        # Apply changes to self.communities
-        # Remove old
+        # 4. Apply Changes
         for cid in merged_ids:
-            del self.communities[cid]
-            
-        # Add new
+            if cid in self.communities:
+                del self.communities[cid]
         self.communities.update(new_communities)
         
-        # Clear pending
         self.pending_merge_suggestions = []
         
         if new_communities:
             print(f"Merge Complete. Created {len(new_communities)} new communities. Total communities: {len(self.communities)}")
+
 
     def _check_heuristic_merge(self):
         """
@@ -363,7 +419,8 @@ class PCMCCEnvironment:
         if merge_groups:
             print(f"Heuristic Merge Groups: {merge_groups}")
             self.set_merge_suggestions(merge_groups)
-            self._execute_merges()
+            # Use strict_validation=False to bypass Meta-Agent specific checks
+            self._execute_merges(strict_validation=False)
 
     def step(self, agent_active: bool = False):
         """
@@ -375,7 +432,11 @@ class PCMCCEnvironment:
         # 0. Check and Execute Merges
         # A. Priority: Pending Agent Suggestions
         if self.pending_merge_suggestions:
-            self._execute_merges()
+            # Assuming pending suggestions here are from Meta-Agent (strict check)
+            # But if they were set by heuristic just now? 
+            # Actually _check_heuristic_merge calls execute immediately.
+            # So if we are here, it must be from Meta-Agent set in previous turn.
+            self._execute_merges(strict_validation=True)
         # B. Fallback: Heuristic Merging (Only if no Agent active)
         elif not agent_active:
              self._check_heuristic_merge()
