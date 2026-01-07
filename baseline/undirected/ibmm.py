@@ -331,10 +331,10 @@ if __name__ == "__main__":
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
                 res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=args.mc_runs)
-                print(f"Average Negatively Activated Nodes (COICM): {res_coicm}")
-                current_k_coicm.append(res_coicm)
+                print(f"Average Negatively Activated Nodes (COICM): {res_coicm:.0f}")
+                current_k_coicm.append(res_coicm.round().astype(int))
             
-            avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
+            avg_neg_nodes_COICM.append((sum(current_k_coicm) / len(current_k_coicm)).round().astype(int))
 
         # Plot COICM
         try:

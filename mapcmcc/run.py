@@ -258,12 +258,12 @@ def main():
                 else:
                     print("Warning: No global best seed set found.")
                 
-                current_k_coicm_list.append(neg_activated_count_coicm)
-                current_k_mcicm_list.append(neg_activated_count_mcicm)
+                current_k_coicm_list.append(neg_activated_count_coicm.round().astype(int))
+                current_k_mcicm_list.append(neg_activated_count_mcicm.round().astype(int))
 
             # Average results
-            avg_coicm = sum(current_k_coicm_list) / len(current_k_coicm_list) if current_k_coicm_list else 0
-            avg_mcicm = sum(current_k_mcicm_list) / len(current_k_mcicm_list) if current_k_mcicm_list else 0
+            avg_coicm = (sum(current_k_coicm_list) / len(current_k_coicm_list)).round().astype(int) if current_k_coicm_list else 0
+            avg_mcicm = (sum(current_k_mcicm_list) / len(current_k_mcicm_list)).round().astype(int) if current_k_mcicm_list else 0
             
             print(f"Average Negatively Activated Nodes (COICM, k={k}): {avg_coicm:.0f}")
             print(f"Average Negatively Activated Nodes (MCICM, k={k}): {avg_mcicm:.0f}")

@@ -416,10 +416,10 @@ if __name__ == "__main__":
                 print(f"Running Monte Carlo Evaluation...")
                 bestS_mapped = [node_map[u] for u in bestS]
                 res_mcicm = monte_carlo_gpu(num_nodes, indices, values, bestS_mapped, SN_mapped, runs=args.mc_runs)
-                print(f"Average Negatively Activated Nodes: {res_mcicm}")
-                current_k_mcicm.append(res_mcicm)
+                print(f"Average Negatively Activated Nodes: {res_mcicm:.0f}")
+                current_k_mcicm.append(res_mcicm.round().astype(int))
             
-            avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
+            avg_neg_nodes_MCICM.append((sum(current_k_mcicm) / len(current_k_mcicm)).round().astype(int))
 
         # Plot
         try:

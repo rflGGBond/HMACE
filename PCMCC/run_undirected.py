@@ -1629,21 +1629,21 @@ if __name__ == "__main__":
                 print(f"Running Monte Carlo Evaluation (COICM)...")
                 avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (COICM): {avg_neg_activated_coicm:.0f}")
-                current_k_results_COICM.append(avg_neg_activated_coicm)
+                current_k_results_COICM.append(avg_neg_activated_coicm.round().astype(int))
 
                 # Evaluate MCICM
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
                 avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Average Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm:.0f}")
-                current_k_results_MCICM.append(avg_neg_activated_mcicm) 
+                current_k_results_MCICM.append(avg_neg_activated_mcicm.round().astype(int)) 
 
             if current_k_results_COICM:
-                avg_neg_nodes_COICM.append(sum(current_k_results_COICM) / len(current_k_results_COICM))
+                avg_neg_nodes_COICM.append((sum(current_k_results_COICM) / len(current_k_results_COICM)).round().astype(int))
             else:
                 avg_neg_nodes_COICM.append(0)
 
             if current_k_results_MCICM:
-                avg_neg_nodes_MCICM.append(sum(current_k_results_MCICM) / len(current_k_results_MCICM))
+                avg_neg_nodes_MCICM.append((sum(current_k_results_MCICM) / len(current_k_results_MCICM)).round().astype(int))
             else:
                 avg_neg_nodes_MCICM.append(0)
 
