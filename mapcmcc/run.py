@@ -18,6 +18,7 @@ from mapcmcc.utils.select_SN import select_SN
 from mapcmcc.core.evaluator import DPADVEvaluator
 import random
 import numpy as np
+import torch
 
 class LoggerWriter:
     """
@@ -49,6 +50,7 @@ def main():
     parser.add_argument("--max_gen", type=int, default=20, help="Maximum number of generations")
     parser.add_argument("--t_comm", type=int, default=5, help="Communication interval")
     parser.add_argument("--mc_runs", type=int, default=100, help="Number of Monte Carlo runs for evaluation")
+    parser.add_argument("--repeats", type=int, default=5, help="Number of repeats for each experiment")
     
     # LLM Arguments
     parser.add_argument("--llm_provider", type=str, default="local", choices=["mock", "local", "openai"], help="LLM Provider")
@@ -124,126 +126,150 @@ def main():
             print(f"Starting Run for {GRAPH_NAME} with Budget (k) = {k}")
             print(f"==========================================\n")
 
-            # Initialize Environment
-            print("Initializing MAPCMCC Environment...")
-            env = PCMCCEnvironment(GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, is_directed=is_directed)
-            
-            # Initialize Agents
-            community_agents = {}
-            for com_id in env.communities:
-                community_agents[com_id] = CommunityAgent(
-                    agent_id=f"ComAgent_{com_id}",
-                    llm_client=llm_client
-                )
-            
-            # MetaAgent
-            try:
-                meta_agent = MetaAgent(llm_client=llm_client) 
-            except Exception as e:
-                print(f"Warning: Failed to initialize MetaAgent: {e}")
-                meta_agent = None
-            
-            print("Starting Evolution Loop...")
-            start_time = time.time()
-            
-            gen = 1
-            while True:
-                print(f"\n--- Generation {gen} ---")
-                print(f"Current Communities: {len(env.communities)}")
+            current_k_coicm_list = []
+            current_k_mcicm_list = []
+
+            for r in range(args.repeats):
+                print(f"\n--- Repeat {r+1}/{args.repeats} ---")
+
+                # Set independent seed for this run
+                current_seed = 42 + k + r * 1000
+                random.seed(current_seed)
+                np.random.seed(current_seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(current_seed)
+                torch.manual_seed(current_seed)
+
+                # Initialize Environment
+                print("Initializing MAPCMCC Environment...")
+                env = PCMCCEnvironment(GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, is_directed=is_directed)
                 
-                # 1. Standard Evolution Step (PCMCC)
-                # We pass agent_active=False so that heuristic merges are ALWAYS checked/executed in the step.
-                # This ensures the generation is "fully completed" (including standard merges) 
-                # before the Agent is called to observe the result.
-                env.step(agent_active=False)
-                
-                # Sync Agents with Environment (Handle Merges)
-                current_community_ids = set(env.communities.keys())
-                agent_ids = set(community_agents.keys())
-                
-                # Remove agents for deleted communities
-                for cid in agent_ids - current_community_ids:
-                    print(f"Removing Agent for merged/deleted community {cid}")
-                    del community_agents[cid]
-                    
-                # Add agents for new communities
-                for cid in current_community_ids - agent_ids:
-                    print(f"Initializing Agent for new community {cid}")
-                    community_agents[cid] = CommunityAgent(
-                        agent_id=f"ComAgent_{cid}",
+                # Initialize Agents
+                community_agents = {}
+                for com_id in env.communities:
+                    community_agents[com_id] = CommunityAgent(
+                        agent_id=f"ComAgent_{com_id}",
                         llm_client=llm_client
                     )
                 
-                # 2. Agent Interaction (Every T_comm generations)
-                if gen % T_COMM == 0:
-                    print("\n>>> Triggering Multi-Agent Interaction")
+                # MetaAgent
+                try:
+                    meta_agent = MetaAgent(llm_client=llm_client) 
+                except Exception as e:
+                    print(f"Warning: Failed to initialize MetaAgent: {e}")
+                    meta_agent = None
+                
+                print("Starting Evolution Loop...")
+                start_time = time.time()
+                
+                gen = 1
+                while True:
+                    print(f"\n--- Generation {gen} ---")
+                    print(f"Current Communities: {len(env.communities)}")
                     
-                    # A. Community Agents
-                    for com_id, agent in community_agents.items():
-                        # Get Real Observation
-                        obs_dict = env.communities[com_id].get_observation(
-                            current_gen=gen,
-                            global_stage="exploration", # Simplified stage logic
-                            global_dpadv=env.global_best_dpadv
+                    # 1. Standard Evolution Step (PCMCC)
+                    # We pass agent_active=False so that heuristic merges are ALWAYS checked/executed in the step.
+                    # This ensures the generation is "fully completed" (including standard merges) 
+                    # before the Agent is called to observe the result.
+                    env.step(agent_active=False)
+                    
+                    # Sync Agents with Environment (Handle Merges)
+                    current_community_ids = set(env.communities.keys())
+                    agent_ids = set(community_agents.keys())
+                    
+                    # Remove agents for deleted communities
+                    for cid in agent_ids - current_community_ids:
+                        print(f"Removing Agent for merged/deleted community {cid}")
+                        del community_agents[cid]
+                        
+                    # Add agents for new communities
+                    for cid in current_community_ids - agent_ids:
+                        print(f"Initializing Agent for new community {cid}")
+                        community_agents[cid] = CommunityAgent(
+                            agent_id=f"ComAgent_{cid}",
+                            llm_client=llm_client
                         )
-                        # Convert dict to Dataclass
-                        obs = CommunityObservation(**obs_dict)
-                        
-                        # Get Action (LLM/Rule-Based)
-                        action = agent.get_action(obs)
-                        
-                        # Apply Action
-                        env.apply_community_action(com_id, action)
-                        
-                    # B. Meta Agent
-                    if meta_agent:
-                        # Get Real Global Observation
-                        obs = env.get_global_observation()
-                        
-                        meta_action = meta_agent.get_action(obs)
-                        
-                        # 2.1 Apply Meta-Agent Suggestions to Environment
-                        if meta_action.merge_suggestions:
-                            print(f"Meta-Agent suggests merging: {meta_action.merge_suggestions}")
-                            env.set_merge_suggestions(meta_action.merge_suggestions)
-                        
-                        env.apply_meta_action(meta_action)
                     
-                # 3. Check Convergence
-                if env.check_termination(MAX_GEN): 
-                    break
-                
-                print(f"Generation {gen} Best DPADV: {env.global_best_dpadv}")
-                gen += 1
-                
-            end_time = time.time()
-            print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}. Total Time: {end_time - start_time:.0f}s")
-            print(f"Best Global DPADV: {env.global_best_dpadv}")
+                    # 2. Agent Interaction (Every T_comm generations)
+                    if gen % T_COMM == 0:
+                        print("\n>>> Triggering Multi-Agent Interaction")
+                        
+                        # A. Community Agents
+                        for com_id, agent in community_agents.items():
+                            # Get Real Observation
+                            obs_dict = env.communities[com_id].get_observation(
+                                current_gen=gen,
+                                global_stage="exploration", # Simplified stage logic
+                                global_dpadv=env.global_best_dpadv
+                            )
+                            # Convert dict to Dataclass
+                            obs = CommunityObservation(**obs_dict)
+                            
+                            # Get Action (LLM/Rule-Based)
+                            action = agent.get_action(obs)
+                            
+                            # Apply Action
+                            env.apply_community_action(com_id, action)
+                            
+                        # B. Meta Agent
+                        if meta_agent:
+                            # Get Real Global Observation
+                            obs = env.get_global_observation()
+                            
+                            meta_action = meta_agent.get_action(obs)
+                            
+                            # 2.1 Apply Meta-Agent Suggestions to Environment
+                            if meta_action.merge_suggestions:
+                                print(f"Meta-Agent suggests merging: {meta_action.merge_suggestions}")
+                                env.set_merge_suggestions(meta_action.merge_suggestions)
+                            
+                            env.apply_meta_action(meta_action)
+                        
+                    # 3. Check Convergence
+                    if env.check_termination(MAX_GEN): 
+                        break
+                    
+                    print(f"Generation {gen} Best DPADV: {env.global_best_dpadv}")
+                    gen += 1
+                    
+                end_time = time.time()
+                print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}, repeat={r+1}. Total Time: {end_time - start_time:.0f}s")
+                print(f"Best Global DPADV: {env.global_best_dpadv}")
 
-            # Calculate and print Negatively Activated Nodes
-            neg_activated_count_coicm = 0
-            neg_activated_count_mcicm = 0
+                # Calculate and print Negatively Activated Nodes
+                neg_activated_count_coicm = 0
+                neg_activated_count_mcicm = 0
+                
+                if env.global_best_seed:
+                    print(f"Calculating final activated nodes (Monte Carlo runs: {args.mc_runs})...")
+                    
+                    # COICM
+                    neg_activated_count_coicm = DPADVEvaluator.get_activated_node_count(
+                        env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='COICM'
+                    )
+                    print(f"Negatively Activated Nodes (COICM, k={k}, repeat={r+1}): {neg_activated_count_coicm:.0f}")
+                    
+                    # MCICM
+                    neg_activated_count_mcicm = DPADVEvaluator.get_activated_node_count(
+                        env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='MCICM'
+                    )
+                    print(f"Negatively Activated Nodes (MCICM, k={k}, repeat={r+1}): {neg_activated_count_mcicm:.0f}")
+                    
+                else:
+                    print("Warning: No global best seed set found.")
+                
+                current_k_coicm_list.append(neg_activated_count_coicm)
+                current_k_mcicm_list.append(neg_activated_count_mcicm)
+
+            # Average results
+            avg_coicm = sum(current_k_coicm_list) / len(current_k_coicm_list) if current_k_coicm_list else 0
+            avg_mcicm = sum(current_k_mcicm_list) / len(current_k_mcicm_list) if current_k_mcicm_list else 0
             
-            if env.global_best_seed:
-                print(f"Calculating final activated nodes (Monte Carlo runs: {args.mc_runs})...")
-                
-                # COICM
-                neg_activated_count_coicm = DPADVEvaluator.get_activated_node_count(
-                    env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='COICM'
-                )
-                print(f"Negatively Activated Nodes (COICM, k={k}): {neg_activated_count_coicm}")
-                
-                # MCICM
-                neg_activated_count_mcicm = DPADVEvaluator.get_activated_node_count(
-                    env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='MCICM'
-                )
-                print(f"Negatively Activated Nodes (MCICM, k={k}): {neg_activated_count_mcicm}")
-                
-            else:
-                print("Warning: No global best seed set found.")
-            
-            results_coicm.append(neg_activated_count_coicm)
-            results_mcicm.append(neg_activated_count_mcicm)
+            print(f"Average Negatively Activated Nodes (COICM, k={k}): {avg_coicm:.0f}")
+            print(f"Average Negatively Activated Nodes (MCICM, k={k}): {avg_mcicm:.0f}")
+
+            results_coicm.append(avg_coicm)
+            results_mcicm.append(avg_mcicm)
 
         # Plotting Results
         print(f"\nGenerating Plots for {GRAPH_NAME}...")

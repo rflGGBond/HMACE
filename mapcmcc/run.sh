@@ -7,6 +7,7 @@ NUM_COMMUNITIES=16
 MAX_GEN=20
 T_COMM=4
 MC_RUNS=100
+REPEATS=5
 
 # LLM Configuration
 # Options: local, openai
@@ -43,6 +44,7 @@ python3 run.py \
     --max_gen "$MAX_GEN" \
     --t_comm "$T_COMM" \
     --mc_runs "$MC_RUNS" \
+    --repeats "$REPEATS" \
     --llm_provider "$LLM_PROVIDER" \
     --llm_model "$LLM_MODEL" \
     --api_key "$API_KEY" \

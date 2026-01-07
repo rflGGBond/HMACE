@@ -6,7 +6,6 @@ import random
 def get_unique_filepath(directory, filename):
     """
     Ensure the filename is unique in the directory.
-    If 'name.csv' exists, try 'name_1.csv', 'name_2.csv', etc.
     """
     if not os.path.exists(directory):
         os.makedirs(directory)
