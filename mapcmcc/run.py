@@ -217,7 +217,7 @@ def main():
                 gen += 1
                 
             end_time = time.time()
-            print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}. Total Time: {end_time - start_time:.2f}s")
+            print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}. Total Time: {end_time - start_time:.0f}s")
             print(f"Best Global DPADV: {env.global_best_dpadv}")
 
             # Calculate and print Negatively Activated Nodes
@@ -258,7 +258,7 @@ def main():
             plt.plot(K_VALUES, results_coicm, marker='o', linestyle='--', label=GRAPH_NAME, color='salmon')
             
             for x, y in zip(K_VALUES, results_coicm):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
                 
             plt.title(f'COICM {GRAPH_NAME}')
             plt.xlabel('k')
@@ -284,7 +284,7 @@ def main():
             plt.plot(K_VALUES, results_mcicm, marker='o', linestyle='--', label=GRAPH_NAME, color='skyblue')
             
             for x, y in zip(K_VALUES, results_mcicm):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
                 
             plt.title(f'MCICM {GRAPH_NAME}')
             plt.xlabel('k')

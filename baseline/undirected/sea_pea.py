@@ -373,7 +373,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_COICM, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_COICM):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
             plt.title(f'COICM SEA-PEA {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
@@ -394,7 +394,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_MCICM):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
             plt.title(f'MCICM SEA-PEA {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')

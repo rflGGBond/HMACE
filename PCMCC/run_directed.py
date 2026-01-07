@@ -1629,11 +1629,11 @@ if __name__ == "__main__":
 
                 # Monte Carlo Evaluation
                 avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=args.mc_runs)
-                print(f"Average Negatively Activated Nodes (COICM): {avg_neg_activated_coicm}")
+                print(f"Average Negatively Activated Nodes (COICM): {avg_neg_activated_coicm:.0f}")
                 current_k_results_coicm.append(avg_neg_activated_coicm)
 
                 avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=args.mc_runs)
-                print(f"Average Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm}")
+                print(f"Average Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm:.0f}")
                 current_k_results_mcicm.append(avg_neg_activated_mcicm)
 
             if current_k_results_coicm:
@@ -1655,7 +1655,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_list_coicm, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_list_coicm):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
             plt.title(f'COICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
@@ -1673,7 +1673,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_list_mcicm, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_list_mcicm):
-                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
             plt.title(f'MCICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
