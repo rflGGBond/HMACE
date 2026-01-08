@@ -425,6 +425,13 @@ if __name__ == "__main__":
             current_k_mcicm = []
 
             for r in range(repeats):
+                current_seed = 42 + k + r * 1000
+                random.seed(current_seed)
+                try:
+                    import numpy as np
+                    np.random.seed(current_seed)
+                except ImportError:
+                    pass
                 print(f"\nSEA-PEA: {file_name}, k={k}, run={r+1}/{repeats}")
                 
                 start_time = time.time()

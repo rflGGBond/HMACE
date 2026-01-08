@@ -23,13 +23,13 @@ echo "Graphs: $UNDIRECTED_GRAPHS"
 echo "--------------------------------"
 
 if [ -n "$UNDIRECTED_GRAPHS" ]; then
-    # # Random
-    # echo "Running Random Baseline..."
-    # python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # Random
+    echo "Running Random Baseline..."
+    python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
     
-    # # Max-Degree
-    # echo "Running Max-Degree Baseline..."
-    # python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # Max-Degree
+    echo "Running Max-Degree Baseline..."
+    python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
     
     # # CMIA-H
     # echo "Running CMIA-H Baseline..."
@@ -39,9 +39,9 @@ if [ -n "$UNDIRECTED_GRAPHS" ]; then
     echo "Running IBMM Baseline..."
     python3 ibmm.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # # DDSE
-    # echo "Running DDSE Baseline..."
-    # python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # DDSE
+    echo "Running DDSE Baseline..."
+    python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # # SEA-PEA
     # echo "Running SEA-PEA Baseline..."

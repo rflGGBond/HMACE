@@ -276,7 +276,7 @@ def main():
         
         # 1. COICM Plot
         try:
-            output_fig_dir_coicm = f"../results/COICM/MAPCMCC/"
+            output_fig_dir_coicm = f"../results/COICM/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -302,7 +302,7 @@ def main():
 
         # 2. MCICM Plot
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/"
+            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/repeats{args.repeats}_runs"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

@@ -1219,6 +1219,13 @@ if __name__ == "__main__":
             current_k_results_mcicm = []
 
             for r in range(repeats):
+                current_seed = 42 + k + r * 1000
+                random.seed(current_seed)
+                try:
+                    import numpy as np
+                    np.random.seed(current_seed)
+                except ImportError:
+                    pass
                 print("\nPCMCC", file_name, k, r + 1)
 
                 start_time = time.time()
