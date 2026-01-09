@@ -408,9 +408,9 @@ if __name__ == "__main__":
                 print(f"Running Monte Carlo Evaluation (MCICM)...")
                 res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
                 print(f"Negatively Activated Nodes (MCICM): {res_mcicm:.0f}")
-                current_k_mcicm.append(int(round(res_mcicm)))
+                current_k_mcicm.append(res_mcicm)
             
-            avg_neg_nodes_MCICM.append(int(round(sum(current_k_mcicm) / len(current_k_mcicm))))
+            avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
 
         # Plot MCICM
         try:

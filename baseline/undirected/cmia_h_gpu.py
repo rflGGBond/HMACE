@@ -185,7 +185,8 @@ def monte_carlo_gpu(num_nodes, indices, values, S_P, S_N, runs=100):
 
 # --- CMIA-H Helpers (Optimized) ---
 
-def get_mia_structure_fast(G_succ, G_pred, u, theta, is_in=True):
+def get_mia_structure_fast(G_succ, G_pred, u, theta, blocking_set=None, is_in=True):
+    if blocking_set is None: blocking_set = set()
     dist = {u: 0}
     pq = [(0, u)]
     nodes_in_mia = {u}
@@ -206,8 +207,9 @@ def get_mia_structure_fast(G_succ, G_pred, u, theta, is_in=True):
             if new_dist <= max_dist:
                 if new_dist < dist.get(neighbor, float('inf')):
                     dist[neighbor] = new_dist
-                    heapq.heappush(pq, (new_dist, neighbor))
                     nodes_in_mia.add(neighbor)
+                    if neighbor not in blocking_set:
+                        heapq.heappush(pq, (new_dist, neighbor))
     
     return nodes_in_mia, dist
 
@@ -230,6 +232,27 @@ def get_hops_fast(u, MIIA_nodes, MIIA_dists, G_pred):
                     visited.add(v)
                     queue.append(v)
     return hops
+
+def get_bfs_predecessors(u, max_dist, G_pred):
+    """
+    Reverse BFS on G_pred to find PIIS nodes and their shortest path distances (hops) to u.
+    Returns: {node: dist} for all nodes with dist <= max_dist
+    """
+    dists = {u: 0}
+    queue = [(u, 0)]
+    
+    while queue:
+        curr, d = queue.pop(0)
+        if d >= max_dist:
+            continue
+            
+        # G_pred stores incoming edges: v -> curr. 
+        # So neighbors in G_pred are predecessors in G_succ.
+        for v in G_pred[curr]:
+            if v not in dists:
+                dists[v] = d + 1
+                queue.append((v, d + 1))
+    return dists
 
 def compute_dec_inf_fast(u, S_N, MIIA_nodes, MIIA_dists, d_c, G_pred, hops_to_u):
     d_c_u = d_c.get(u, float('inf'))
@@ -258,7 +281,7 @@ def compute_dec_inf_fast(u, S_N, MIIA_nodes, MIIA_dists, d_c, G_pred, hops_to_u)
             else: ap[v] = 1.0 - product
     return ap.get(u, 0.0)
 
-def cmia_h_gpu(G, S_N, k, theta=1/320):
+def cmia_h_gpu(G, S_N, k, theta=1/100):
     nodes = list(G.nodes())
     # G_succ: u -> {v: w}
     G_succ = {u: {v: G[u][v]['weight'] for v in G[u]} for u in nodes}
@@ -272,13 +295,13 @@ def cmia_h_gpu(G, S_N, k, theta=1/320):
     # Initialization
     NegS = set()
     for u in S_N:
-        mia_nodes, _ = get_mia_structure_fast(G_succ, G_pred, u, theta, is_in=False)
+        mia_nodes, _ = get_mia_structure_fast(G_succ, G_pred, u, theta, blocking_set=set(S_N), is_in=False)
         NegS.update(mia_nodes)
     NegS = NegS - set(S_N)
     
     MIIA_cache = {}
     for u in NegS:
-        nodes_in, dists = get_mia_structure_fast(G_succ, G_pred, u, theta, is_in=True)
+        nodes_in, dists = get_mia_structure_fast(G_succ, G_pred, u, theta, blocking_set=set(S_N), is_in=True)
         hops = get_hops_fast(u, nodes_in, dists, G_pred)
         MIIA_cache[u] = (nodes_in, dists, hops)
         
@@ -288,11 +311,14 @@ def cmia_h_gpu(G, S_N, k, theta=1/320):
         if not valid_hops: continue
         d_N_max_curr = max(valid_hops)
         
-        for v in nodes_in:
-            if hops.get(v, float('inf')) <= d_N_max_curr:
-                d_c_temp = {u: hops[v]} 
-                ap_new = compute_dec_inf_fast(u, S_N, nodes_in, dists, d_c_temp, G_pred, hops)
-                DecInf[v] += (ap_old - ap_new)
+        # Build PIIS using BFS on G_pred (for dP distances)
+        # We need candidates v where dP(v, u) <= d_N_max_curr
+        piis_dists = get_bfs_predecessors(u, d_N_max_curr, G_pred)
+        
+        for v, d_p_v in piis_dists.items():
+            d_c_temp = {u: d_p_v} 
+            ap_new = compute_dec_inf_fast(u, S_N, nodes_in, dists, d_c_temp, G_pred, hops)
+            DecInf[v] += (ap_old - ap_new)
 
     # Greedy Loop
     for i in range(k):
@@ -307,7 +333,7 @@ def cmia_h_gpu(G, S_N, k, theta=1/320):
         bfs_q = [(u_best, 0)]
         while bfs_q:
             curr, d = bfs_q.pop(0)
-            if d > 10: continue
+            # Removed hardcoded limit: if d > 10: continue
             for nbr in G_succ[curr]:
                 if nbr not in dists_from_new_seed:
                     dists_from_new_seed[nbr] = d + 1
@@ -324,10 +350,11 @@ def cmia_h_gpu(G, S_N, k, theta=1/320):
             valid_hops_old = [hops[s] for s in S_N if s in nodes_in and hops[s] < old_dc]
             if valid_hops_old:
                 d_N_max_old = max(valid_hops_old)
-                for v in nodes_in:
-                    if hops.get(v, float('inf')) <= d_N_max_old:
-                        ap_with_v = compute_dec_inf_fast(t, S_N, nodes_in, dists, {t: hops[v]}, G_pred, hops)
-                        DecInf[v] -= (ap_old_state - ap_with_v)
+                piis_old = get_bfs_predecessors(t, d_N_max_old, G_pred)
+                for v, d_p_v in piis_old.items():
+                    d_c_temp = {t: d_p_v}
+                    ap_with_v = compute_dec_inf_fast(t, S_N, nodes_in, dists, d_c_temp, G_pred, hops)
+                    DecInf[v] -= (ap_old_state - ap_with_v)
 
             d_c[t] = dists_from_new_seed[t]
             
@@ -337,10 +364,11 @@ def cmia_h_gpu(G, S_N, k, theta=1/320):
             valid_hops_new = [hops[s] for s in S_N if s in nodes_in and hops[s] < new_dc]
             if valid_hops_new:
                 d_N_max_new = max(valid_hops_new)
-                for v in nodes_in:
-                    if hops.get(v, float('inf')) <= d_N_max_new:
-                        ap_with_v = compute_dec_inf_fast(t, S_N, nodes_in, dists, {t: hops[v]}, G_pred, hops)
-                        DecInf[v] += (ap_new_state - ap_with_v)
+                piis_new = get_bfs_predecessors(t, d_N_max_new, G_pred)
+                for v, d_p_v in piis_new.items():
+                    d_c_temp = {t: d_p_v}
+                    ap_with_v = compute_dec_inf_fast(t, S_N, nodes_in, dists, d_c_temp, G_pred, hops)
+                    DecInf[v] += (ap_new_state - ap_with_v)
 
     return S_P
 
@@ -430,9 +458,9 @@ if __name__ == "__main__":
                 bestS_mapped = [node_map[u] for u in bestS]
                 res_mcicm = monte_carlo_gpu(num_nodes, indices, values, bestS_mapped, SN_mapped, runs=args.mc_runs)
                 print(f"Negatively Activated Nodes: {res_mcicm:.0f}")
-                current_k_mcicm.append(int(round(res_mcicm)))
+                current_k_mcicm.append(res_mcicm)
             
-            avg_neg_nodes_MCICM.append(int(round(sum(current_k_mcicm) / len(current_k_mcicm))))
+            avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
 
         # Plot
         try:

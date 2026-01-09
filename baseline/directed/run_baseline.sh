@@ -29,9 +29,9 @@ if [ -n "$DIRECTED_GRAPHS" ]; then
     # echo "Running Max-Degree Baseline..."
     # python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
     
-    # # CMIA-H
-    # echo "Running CMIA-H Baseline..."
-    # python3 cmia_h_gpu.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # CMIA-H
+    echo "Running CMIA-H Baseline..."
+    python3 cmia_h_gpu.py --k $K_VALUES --repeats $REPEATS --graphs $DIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # # IBMM
     # echo "Running IBMM Baseline..."
