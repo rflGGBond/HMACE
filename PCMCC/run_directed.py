@@ -1191,6 +1191,8 @@ if __name__ == "__main__":
     SN_dic["p2p-Gnutella31"] = select_SN("p2p-Gnutella31", 50)
     
     SN_dic["soc-Epinions1"] = select_SN("soc-Epinions1", 50)
+    
+    SN_dic["p2p-Gnutella09"] = select_SN("p2p-Gnutella09", 50)
 
     graphs = args.graphs
 
@@ -1636,11 +1638,11 @@ if __name__ == "__main__":
 
                 # Monte Carlo Evaluation
                 avg_neg_activated_coicm = monte_carlo_evaluation(Gs, bestS, SN, model='COICM', runs=args.mc_runs)
-                print(f"Negatively Activated Nodes (COICM): {avg_neg_activated_coicm:.0f}")
+                print(f"Negatively Activated Nodes (COICM): {avg_neg_activated_coicm:.2f}")
                 current_k_results_coicm.append(avg_neg_activated_coicm)
 
                 avg_neg_activated_mcicm = monte_carlo_evaluation(Gs, bestS, SN, model='MCICM', runs=args.mc_runs)
-                print(f"Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm:.0f}")
+                print(f"Negatively Activated Nodes (MCICM): {avg_neg_activated_mcicm:.2f}")
                 current_k_results_mcicm.append(avg_neg_activated_mcicm)
 
             if current_k_results_coicm:
@@ -1662,7 +1664,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_list_coicm, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_list_coicm):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
             plt.title(f'COICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
@@ -1680,7 +1682,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_list_mcicm, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_list_mcicm):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
             plt.title(f'MCICM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')

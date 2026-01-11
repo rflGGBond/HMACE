@@ -4,9 +4,7 @@ from tqdm import tqdm
 
 if __name__ == "__main__":
     # 要处理的文件名列表
-    graphs = ["BA3000/BA3000.txt", "ER3000/ER3000.txt", "RG3000/RG3000.txt", "WS3000/WS3000.txt", 
-                "email-Eu-core/email-Eu-core.txt", "Email-EuAll/Email-EuAll.txt", "HR/HR.txt",
-                "p2p-Gnutella31/p2p-Gnutella31.txt", "soc-Epinions1/soc-Epinions1.txt"]
+    graphs = ["p2p-Gnutella09.txt"]
     
     # 权重列表
     weights = [0.01, 0.05, 0.2]

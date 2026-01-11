@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="Email-EuAll"
-TOTAL_BUDGET="20 110 200"
+GRAPHS="p2p-Gnutella09"
+TOTAL_BUDGET="200"
 NUM_COMMUNITIES=16
 MAX_GEN=20
 T_COMM=4
 MC_RUNS=100
-REPEATS=5
+REPEATS=10
 
 # LLM Configuration
 # Options: local, openai
 LLM_PROVIDER="local" 
 # LLM_MODEL="gpt-4o" 
-LLM_MODEL="Qwen2.5-32B-Instruct"
+LLM_MODEL="Qwen2.5-1.5B-Instruct"
 API_KEY="sk-20L54633d745bf1b62dd4e22dc976f663fbc69695e4WSh1S" 
 MODEL_ROOT="../../models"
 

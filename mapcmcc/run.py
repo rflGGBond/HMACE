@@ -38,8 +38,8 @@ class LoggerWriter:
         self.log.flush()
 
 # Define graph types based on PCMCC reference
-DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"}
-UNDIRECTED_GRAPHS = {"facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"}
+DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1", "p2p-Gnutella09"}
+UNDIRECTED_GRAPHS = {"Email-Enron", "facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"}
 
 def main():
     # Parse command line arguments
@@ -233,7 +233,7 @@ def main():
                     gen += 1
                     
                 end_time = time.time()
-                print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}, repeat={r+1}. Total Time: {end_time - start_time:.0f}s")
+                print(f"\nEvolution Finished for {GRAPH_NAME}, k={k}, repeat={r+1}. Total Time: {end_time - start_time:.2f}s")
                 print(f"Best Global DPADV: {env.global_best_dpadv}")
 
                 # Calculate and print Negatively Activated Nodes
@@ -247,13 +247,13 @@ def main():
                     neg_activated_count_coicm = DPADVEvaluator.get_activated_node_count(
                         env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='COICM'
                     )
-                    print(f"Negatively Activated Nodes (COICM, k={k}, repeat={r+1}): {neg_activated_count_coicm:.0f}")
+                    print(f"Negatively Activated Nodes (COICM, k={k}, repeat={r+1}): {neg_activated_count_coicm:.2f}")
                     
                     # MCICM
                     neg_activated_count_mcicm = DPADVEvaluator.get_activated_node_count(
                         env.global_best_seed, env.Gs, env.sn_nodes, runs=args.mc_runs, model='MCICM'
                     )
-                    print(f"Negatively Activated Nodes (MCICM, k={k}, repeat={r+1}): {neg_activated_count_mcicm:.0f}")
+                    print(f"Negatively Activated Nodes (MCICM, k={k}, repeat={r+1}): {neg_activated_count_mcicm:.2f}")
                     
                 else:
                     print("Warning: No global best seed set found.")
@@ -265,8 +265,8 @@ def main():
             avg_coicm = sum(current_k_coicm_list) / len(current_k_coicm_list) if current_k_coicm_list else 0
             avg_mcicm = sum(current_k_mcicm_list) / len(current_k_mcicm_list) if current_k_mcicm_list else 0
             
-            print(f"Negatively Activated Nodes (COICM, k={k}): {avg_coicm:.0f}")
-            print(f"Negatively Activated Nodes (MCICM, k={k}): {avg_mcicm:.0f}")
+            print(f"Negatively Activated Nodes (COICM, k={k}): {avg_coicm:.2f}")
+            print(f"Negatively Activated Nodes (MCICM, k={k}): {avg_mcicm:.2f}")
 
             results_coicm.append(avg_coicm)
             results_mcicm.append(avg_mcicm)
@@ -284,7 +284,7 @@ def main():
             plt.plot(K_VALUES, results_coicm, marker='o', linestyle='--', label=GRAPH_NAME, color='salmon')
             
             for x, y in zip(K_VALUES, results_coicm):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
                 
             plt.title(f'COICM {GRAPH_NAME}')
             plt.xlabel('k')
@@ -310,7 +310,7 @@ def main():
             plt.plot(K_VALUES, results_mcicm, marker='o', linestyle='--', label=GRAPH_NAME, color='skyblue')
             
             for x, y in zip(K_VALUES, results_mcicm):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
                 
             plt.title(f'MCICM {GRAPH_NAME}')
             plt.xlabel('k')

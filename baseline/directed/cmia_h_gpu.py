@@ -451,7 +451,7 @@ if __name__ == "__main__":
                 print(f"Running Monte Carlo Evaluation...")
                 bestS_mapped = [node_map[u] for u in bestS]
                 res_mcicm = monte_carlo_gpu(num_nodes, indices, values, bestS_mapped, SN_mapped, runs=args.mc_runs)
-                print(f"Negatively Activated Nodes: {res_mcicm:.0f}")
+                print(f"Negatively Activated Nodes: {res_mcicm:.2f}")
                 current_k_mcicm.append(res_mcicm)
             
             avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
@@ -465,7 +465,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='skyblue')
             for x, y in zip(k_values, avg_neg_nodes_MCICM):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
             plt.title(f'MCICM CMIA-H {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')

@@ -91,6 +91,7 @@ class MetaAgent(BaseAgent):
         3. BUDGET REDISTRIBUTION:
         - Move budget to communities that need it if necessary.
         - 'budget_adjustments' should be a dictionary where keys are community IDs and values are the adjustment amounts (positive to add, negative to reduce).
+        - CONSTRAINT: The sum of all values in 'budget_adjustments' MUST be 0.
             """
 
         system_prompt = f"""
@@ -123,7 +124,7 @@ class MetaAgent(BaseAgent):
         {{
             "reasoning": "concise explanation",
             "global_baselines": {{ "cr1": float, "cr2": float, "beta": float, "alpha": float }},
-            "budget_adjustments": {{ "community_id": delta_amount }},
+            "budget_adjustments": {{ "1": 10, "2": -10 }},
             "merge_suggestions": [[id1, id2]]
         }}
         """
@@ -141,7 +142,23 @@ class MetaAgent(BaseAgent):
             budget_adjustments = response_json.get("budget_adjustments", {})
             # Convert string keys back to int if necessary (JSON keys are always strings)
             if budget_adjustments:
-                budget_adjustments = {int(k): v for k, v in budget_adjustments.items()}
+                valid_adjustments = {}
+                for k, v in budget_adjustments.items():
+                    try:
+                        valid_adjustments[int(k)] = int(v)
+                    except ValueError:
+                        print(f"Warning: Invalid community ID '{k}' or value '{v}' in budget_adjustments. Skipping.")
+                        continue
+                budget_adjustments = valid_adjustments
+
+                # Force Zero-Sum Constraint
+                total_delta = sum(budget_adjustments.values())
+                if total_delta != 0 and budget_adjustments:
+                    print(f"Warning: Budget adjustments sum to {total_delta} (not 0). Normalizing...")
+                    # Adjust the first valid community to balance the equation
+                    first_key = next(iter(budget_adjustments))
+                    budget_adjustments[first_key] -= total_delta
+                    print(f"Normalized: Adjusted community {first_key} by {-total_delta}.")
             
             # --- Hybrid Merge Strategy: Filter by Heuristic Score (from merger.py logic) ---
             raw_suggestions = response_json.get("merge_suggestions", [])

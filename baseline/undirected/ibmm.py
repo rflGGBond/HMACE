@@ -338,7 +338,7 @@ if __name__ == "__main__":
                 # Evaluate COICM
                 print(f"Running Monte Carlo Evaluation (COICM)...")
                 res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=args.mc_runs)
-                print(f"Negatively Activated Nodes (COICM): {res_coicm:.0f}")
+                print(f"Negatively Activated Nodes (COICM): {res_coicm:.2f}")
                 current_k_coicm.append(res_coicm)
             
             avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
@@ -352,7 +352,7 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(k_values, avg_neg_nodes_COICM, marker='o', linestyle='--', label=file_name, color='salmon')
             for x, y in zip(k_values, avg_neg_nodes_COICM):
-                plt.text(x, y, f'{y:.0f}', ha='center', va='bottom')
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
             plt.title(f'COICM IBMM {file_name}')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')

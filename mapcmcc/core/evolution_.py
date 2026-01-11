@@ -1,3 +1,4 @@
+
 import random
 import copy
 from collections import defaultdict
@@ -230,8 +231,6 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
     Pure function to perform crossover and mutation on two individuals.
     Returns both new offspring (S1, SI).
     """
-    cOne = float(cOne)
-    cTwo = float(cTwo)
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
     
@@ -239,7 +238,7 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
     # com_sn is assumed to be sorted (e.g. by degree) as passed from env
     current_pool = com_sn
     if alpha is not None:
-        pool_size = int(float(alpha) * float(budget))
+        pool_size = int(alpha * budget)
         if pool_size < len(com_sn):
             current_pool = com_sn[:pool_size]
     
@@ -279,15 +278,10 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
         if candidates:
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
-            for e in range(len(S1)):
+            for e in range(budget):
                 if S1[e] == -1 and J < len(replaceS1):
                     S1[e] = replaceS1[J]
                     J += 1
-    
-    # Fallback: If -1 still exists (candidates exhausted), fill with random valid nodes
-    while -1 in S1:
-        idx = S1.index(-1)
-        S1[idx] = random.choice(current_pool)
                     
     # Fix duplicates SI
     if repeatSI != 0:
@@ -295,15 +289,10 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
         if candidates:
             replaceSI = sample(candidates, P_score, repeatSI)
             J = 0
-            for e in range(len(SI)):
+            for e in range(budget):
                 if SI[e] == -1 and J < len(replaceSI):
                     SI[e] = replaceSI[J]
                     J += 1
-                    
-    # Fallback for SI
-    while -1 in SI:
-        idx = SI.index(-1)
-        SI[idx] = random.choice(current_pool)
     
     return S1, SI
 
@@ -311,15 +300,13 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
     """
     Performs full crossover/mutation on two individuals, returning both modified versions.
     """
-    cOne = float(cOne)
-    cTwo = float(cTwo)
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
     
     # Apply alpha reduction if provided
     current_pool = com_sn
     if alpha is not None:
-        pool_size = int(float(alpha) * float(budget))
+        pool_size = int(alpha * budget)
         if pool_size < len(com_sn):
             current_pool = com_sn[:pool_size]
     
@@ -354,15 +341,10 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
         if candidates:
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
-            for e in range(len(S1)):
+            for e in range(budget):
                 if S1[e] == -1 and J < len(replaceS1):
                     S1[e] = replaceS1[J]
                     J += 1
-
-    # Fallback for S1
-    while -1 in S1:
-        idx = S1.index(-1)
-        S1[idx] = random.choice(current_pool)
 
     # Fix duplicates SI
     if repeatSI != 0:
@@ -370,15 +352,10 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
         if candidates:
             replaceSI = sample(candidates, P_score, repeatSI)
             J = 0
-            for e in range(len(SI)):
+            for e in range(budget):
                 if SI[e] == -1 and J < len(replaceSI):
                     SI[e] = replaceSI[J]
                     J += 1
-    
-    # Fallback for SI
-    while -1 in SI:
-        idx = SI.index(-1)
-        SI[idx] = random.choice(current_pool)
     
     return S1, SI
 
@@ -399,12 +376,12 @@ def _evolve_subpopulation_step(
 
     # Update shared memory if better
     if effectS1 < shared_islands_effect[islands_effect_index[community_id, subpop_id, index_s1]]:
-        for X in range(len(new_S1)):
+        for X in range(budget):
             shared_islands[islands_index[community_id, subpop_id, index_s1, X]] = new_S1[X]
         shared_islands_effect[islands_effect_index[community_id, subpop_id, index_s1]] = effectS1
 
     if effectSI < shared_islands_effect[islands_effect_index[community_id, subpop_id, I]]:
-        for X in range(len(new_SI)):
+        for X in range(budget):
             shared_islands[islands_index[community_id, subpop_id, I, X]] = new_SI[X]
         shared_islands_effect[islands_effect_index[community_id, subpop_id, I]] = effectSI
 

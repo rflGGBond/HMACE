@@ -871,6 +871,14 @@ class PCMCCEnvironment:
             sim_local_seeds = {} # Store per-community simulated seeds
             sim_params = action.global_baselines
             
+            # Defensive check: Ensure sim_params is a dict
+            if isinstance(sim_params, list):
+                print(f"Warning: global_baselines received as list {sim_params}. Attempting to extract dict.")
+                if len(sim_params) > 0 and isinstance(sim_params[0], dict):
+                    sim_params = sim_params[0]
+                else:
+                    sim_params = {} # Fallback to empty to use defaults
+            
             # Pre-calculate shared metrics
             N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
                 self.Gs, self.sn_nodes, self.fitness_space, hop=2
