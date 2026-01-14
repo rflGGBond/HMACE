@@ -38,7 +38,7 @@ class LoggerWriter:
         self.log.flush()
 
 # Define graph types based on PCMCC reference
-DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1", "p2p-Gnutella09"}
+DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1", "p2p-Gnutella09", "congress-Twitter", "p2p-Gnutella08"}
 UNDIRECTED_GRAPHS = {"Email-Enron", "facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"}
 
 def main():
@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--num_communities", type=int, default=16, help="Number of communities")
     parser.add_argument("--max_gen", type=int, default=20, help="Maximum number of generations")
     parser.add_argument("--t_comm", type=int, default=5, help="Communication interval")
-    parser.add_argument("--mc_runs", type=int, default=100, help="Number of Monte Carlo runs for evaluation")
+    parser.add_argument("--mc_runs", type=int, default=10000, help="Number of Monte Carlo runs for evaluation")
     parser.add_argument("--repeats", type=int, default=5, help="Number of repeats for each experiment")
     
     # LLM Arguments
@@ -65,19 +65,14 @@ def main():
     np.random.seed(42)
 
     # --- Setup Logging ---
-    log_dir = "../results/logs/MAPCMCC"
+    log_dir = f"../results/logs/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"mapcmcc_{args.graphs[0]}_{args.llm_model}_{timestamp}.log"
-    log_path = os.path.join(log_dir, log_filename)
     
-    # Redirect stdout to LoggerWriter
-    sys.stdout = LoggerWriter(log_path)
-    
-    print(f"Logging output to: {log_path}")
-    print("-" * 50)
+    # Store original stdout
+    original_stdout = sys.stdout
 
     # Configuration Constants
     K_VALUES = args.total_budget
@@ -95,6 +90,18 @@ def main():
     )
 
     for GRAPH_NAME in args.graphs:
+        # --- Setup Logging per Graph ---
+        log_filename = f"mapcmcc_{GRAPH_NAME}_{args.llm_model}_{timestamp}_runs{args.mc_runs}.log"
+        log_path = os.path.join(log_dir, log_filename)
+        
+        # Reset stdout to avoid nesting loggers
+        sys.stdout = original_stdout
+        # Redirect stdout to LoggerWriter for this graph
+        sys.stdout = LoggerWriter(log_path)
+        
+        print(f"Logging output for {GRAPH_NAME} to: {log_path}")
+        print("-" * 50)
+
         print(f"\n##########################################")
         print(f"Processing Graph: {GRAPH_NAME}")
         print(f"##########################################\n")
@@ -302,7 +309,7 @@ def main():
 
         # 2. MCICM Plot
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/repeats{args.repeats}_runs"
+            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

@@ -77,7 +77,7 @@ def get_params_for_edges(n, m_target, network_type):
         # So k should be even? Documentation says "Each node is joined with its k nearest neighbors in a ring topology."
         # It doesn't strictly enforce even, but standard WS model usually implies even k for symmetry.
         # But let's check nx documentation logic: "k (int) – Each node is joined with its k nearest neighbors in a ring topology."
-        return {'k': k, 'p': 0.1} # Default p
+        return {'k': k, 'p': 0.3} # Default p
         
     elif network_type == 'random': # Erdos-Renyi (gnm)
         return {'m': m_target}

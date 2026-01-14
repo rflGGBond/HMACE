@@ -46,7 +46,7 @@ def sample(l1, w1, k):
 
     return rs
 
-def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
+def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
     """
     Simplified interface for local search, operating on standard lists.
     Returns the optimized seed set S1.
@@ -56,6 +56,9 @@ def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
     
     if budget == 0:
         return S1
+    
+    # Calculate initial fitness to ensure strict improvement
+    current_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
     
     while True:
         discount_P_score_diff = []
@@ -192,10 +195,17 @@ def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
 
         S1[I_worst] = rn
 
-        # 4. Check if improvement occurred (Simple check: if we picked a new node)
-        # Note: In original code, it recalculates fitness to be sure.
-        # Here we just check if S1 changed.
-        if S1 == Sbest:
+        # 4. Check if improvement occurred (Strict Monotonicity Check)
+        # Calculate real fitness of the candidate S1
+        new_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
+        
+        # If real fitness improved, keep change and update current_fitness
+        if new_fitness < current_fitness:
+            current_fitness = new_fitness
+            Sbest = copy.deepcopy(S1) # Update best
+        else:
+            # Revert to previous best state and BREAK
+            S1 = copy.deepcopy(Sbest)
             break
             
     return S1

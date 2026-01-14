@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 if __name__ == "__main__":
     # 要处理的文件名列表
-    graphs = ["p2p-Gnutella09.txt"]
+    graphs = ["p2p-Gnutella08.txt"]
     
     # 权重列表
     weights = [0.01, 0.05, 0.2]

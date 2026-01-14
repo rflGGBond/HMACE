@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="p2p-Gnutella09"
-TOTAL_BUDGET="200"
+GRAPHS="BA3000 ER3000 RG3000 WS3000 email-Eu-core congress-Twitter p2p-Gnutella08 p2p-Gnutella31 soc-Epinions1"
+TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20
 T_COMM=4
-MC_RUNS=100
+MC_RUNS=10000
 REPEATS=10
 
 # LLM Configuration

@@ -71,17 +71,18 @@ def monte_carlo_sparse_batch(num_nodes, indices, values, S_P, S_N, runs=100):
     final_rows = row_indices.flatten()[mask]
     final_cols = col_indices.flatten()[mask]
     
-    # Create sparse tensor
+    # Create sparse tensor (Transposed for propagation: cols -> rows)
     # Size: (runs*N, runs*N)
     # Values are all 1.0 (unweighted connectivity in live graph)
-    final_indices = torch.stack([final_rows, final_cols])
+    # We stack [final_cols, final_rows] to get A.T directly
+    final_indices_t = torch.stack([final_cols, final_rows])
     final_values = torch.ones(final_rows.shape[0], device=device, dtype=torch.float32)
     
-    adj_neg_sparse = torch.sparse_coo_tensor(
-        final_indices, 
+    adj_neg_transposed = torch.sparse_coo_tensor(
+        final_indices_t, 
         final_values, 
         (runs * num_nodes, runs * num_nodes)
-    )
+    ).coalesce()
     
     # 3. Construct Positive Adjacency (Deterministic)
     # Positive edges are static. We can repeat them or use broadcasting?
@@ -92,14 +93,15 @@ def monte_carlo_sparse_batch(num_nodes, indices, values, S_P, S_N, runs=100):
     row_indices_pos = (indices[0].unsqueeze(0).expand(runs, E) + shifts).flatten()
     col_indices_pos = (indices[1].unsqueeze(0).expand(runs, E) + shifts).flatten()
     
-    final_indices_pos = torch.stack([row_indices_pos, col_indices_pos])
+    # Stack [cols, rows] for Transpose
+    final_indices_pos_t = torch.stack([col_indices_pos, row_indices_pos])
     final_values_pos = torch.ones(row_indices_pos.shape[0], device=device, dtype=torch.float32)
     
-    adj_pos_sparse = torch.sparse_coo_tensor(
-        final_indices_pos,
+    adj_pos_transposed = torch.sparse_coo_tensor(
+        final_indices_pos_t,
         final_values_pos,
         (runs * num_nodes, runs * num_nodes)
-    )
+    ).coalesce()
     
     # 4. Initialize State Vectors
     # Size: (runs * num_nodes, 1)
@@ -138,24 +140,16 @@ def monte_carlo_sparse_batch(num_nodes, indices, values, S_P, S_N, runs=100):
         
         # Transpose Sparse Matrix efficiently?
         # Just swap row/col indices during creation? 
-        # Yes. Let's create Transposed Adjacency for propagation.
+        # Yes. We created Transposed Adjacency above (adj_pos_transposed).
         
-        # NOTE: adj_neg_sparse created above used [rows, cols]. 
-        # If rows=u, cols=v (u->v).
-        # We want y[v] = sum(x[u]).
-        # This is y = A.T @ x.
-        # Or create A_transposed where indices are [cols, rows].
+        # NOTE: adj_neg_transposed uses [cols, rows]. 
+        # So we can use it directly in mm.
         
-        # Let's recreate the sparse matrices as Transposed (v, u) for efficient matvec
-        # Optimization: We can just swap indices in the constructor calls above?
-        # Yes. But let's assume we pass the transposed version to mm.
-        # Sparse .t() is supported.
-        
-        next_pos = torch.sparse.mm(adj_pos_sparse.t(), frontier_pos)
+        next_pos = torch.sparse.mm(adj_pos_transposed, frontier_pos)
         next_pos = (next_pos > 0).float()
         
         # Negative Step
-        next_neg = torch.sparse.mm(adj_neg_sparse.t(), frontier_neg)
+        next_neg = torch.sparse.mm(adj_neg_transposed, frontier_neg)
         next_neg = (next_neg > 0).float()
         
         # Conflict Resolution

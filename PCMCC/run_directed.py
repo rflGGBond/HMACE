@@ -22,20 +22,19 @@ random.seed(SEED)
 # log recorder
 class Logger(object):
 
-    def __init__(self, stream=sys.stdout):
-        output_dir = "../results/logs/PCMCC/" 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-        log_name = f"log_{current_date}_PCMCC_directed.txt"
-        filename = os.path.join(output_dir, log_name)
-
+    def __init__(self, stream=sys.stdout, file_path=None):
         self.terminal = stream
-        self.log = open(filename, 'a+')
+        self.log = None
+        if file_path:
+            output_dir = os.path.dirname(file_path)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            self.log = open(file_path, 'a+')
 
     def write(self, message):
         self.terminal.write(message)
-        self.log.write(message)
+        if self.log:
+            self.log.write(message)
 
     def flush(self):
         pass
@@ -1180,8 +1179,12 @@ if __name__ == "__main__":
     parser.add_argument("--graphs", type=str, nargs="+", default=["email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1"], help="List of graph names")
     parser.add_argument("--mc_runs", type=int, default=50, help="Number of Monte Carlo runs for evaluation")
     args = parser.parse_args()
-
-    sys.stdout = Logger(sys.stdout)  # record log
+    
+    # Store original stdout
+    original_stdout = sys.stdout
+    
+    # Generate timestamp once
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     SN_dic = {}
     SN_dic["email-Eu-core"] = select_SN("email-Eu-core", 50)
@@ -1194,9 +1197,27 @@ if __name__ == "__main__":
     
     SN_dic["p2p-Gnutella09"] = select_SN("p2p-Gnutella09", 50)
 
+    SN_dic["p2p-Gnutella08"] = select_SN("p2p-Gnutella08", 50)
+
+    SN_dic["congress-Twitter"] = select_SN("congress-Twitter", 50)
+
     graphs = args.graphs
 
     for file_name in graphs:
+        # --- Setup Logging per Graph ---
+        log_dir = f"../results/logs/PCMCC/repeats_{args.repeats}_runs{args.mc_runs}"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_name = f"log_{timestamp}_PCMCC_directed_{file_name}.log"
+        log_path = os.path.join(log_dir, log_name)
+        
+        # Reset to original stdout then wrap with new Logger
+        sys.stdout = original_stdout
+        sys.stdout = Logger(sys.stdout, file_path=log_path)
+        
+        print(f"Logging output for {file_name} to: {log_path}")
+        print("-" * 50)
+        
         G = nx.DiGraph()
         with open(f'../graph/{file_name}.txt') as f:
             for line in f:

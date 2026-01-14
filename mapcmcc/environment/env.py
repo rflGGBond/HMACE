@@ -67,6 +67,10 @@ class PCMCCEnvironment:
         
         # Merge suggestions pending execution
         self.pending_merge_suggestions: List[tuple] = []
+        
+        # Cache for expensive closeness calculations
+        self.closeness_cache = defaultdict(lambda: defaultdict(float))
+        self.closeness_cache_valid = False
 
     def set_merge_suggestions(self, suggestions: List[tuple]):
         """
@@ -154,15 +158,24 @@ class PCMCCEnvironment:
             self.search_space, 
             key=lambda x: self.Gs.degree(x)
         )
+        
+        # 5. Pre-calculate Static Metrics (N_prob, P_score)
+        # These depend only on graph structure and spaces, which are static during evolution.
+        print("Pre-calculating static graph metrics (N_prob, P_score)...")
+        self.N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
+            self.Gs, self.sn_nodes, self.fitness_space, hop=2
+        )
+        self.P_score = evaluator.DPADVEvaluator.calculate_positive_score(
+            self.Gs, self.fitness_space, self.search_space, 2, self.N_prob
+        )
+        print("Metrics calculated.")
 
     def _init_communities(self):
         # Community Division
         parts = graph_ops.detect_communities(self.Gs, self.initial_num_communities)
         
-        # Calculate N_prob (needed for budget assignment)
-        N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
-            self.Gs, self.sn_nodes, self.fitness_space, hop=2
-        )
+        # Use cached N_prob
+        N_prob = self.N_prob
         
         # Calculate N_prob sums for each community to assign budgets
         community_probs = []
@@ -364,6 +377,8 @@ class PCMCCEnvironment:
         
         if new_communities:
             print(f"Merge Complete. Created {len(new_communities)} new communities. Total communities: {len(self.communities)}")
+            # Invalidate cache since topology changed
+            self.closeness_cache_valid = False
 
 
     def _check_heuristic_merge(self):
@@ -444,16 +459,9 @@ class PCMCCEnvironment:
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
         
-        # Pre-calculate shared metrics needed for evolution
-        # (In real MP, these are passed via shared memory)
-        N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
-            self.Gs, self.sn_nodes, self.fitness_space, hop=2
-        )
-        
-        # Calculate P_score (Positive Score) for sampling
-        P_score = evaluator.DPADVEvaluator.calculate_positive_score(
-            self.Gs, self.fitness_space, self.search_space, 2, N_prob
-        )
+        # Use cached static metrics
+        N_prob = self.N_prob
+        P_score = self.P_score
         
         # Sort P_score to get top nodes globally (descending order)
         sorted_p_score = sorted(P_score.items(), key=lambda x: x[1], reverse=True)
@@ -544,7 +552,7 @@ class PCMCCEnvironment:
             search_start_node = copy.deepcopy(com.state.population[final_best_idx])
             
             optimized_seed = evolution.local_search(
-                search_start_node, self.G, com_and_fs, self.hop, N_prob, gama_com
+                search_start_node, self.G, self.sn_nodes, com_and_fs, self.hop, N_prob, gama_com
             )
             
             # 5. Final Evaluation & Update
@@ -601,45 +609,42 @@ class PCMCCEnvironment:
         """
         # --- Calculate Community Closeness ---
         # Call logic from merger.py as requested
-        # 1. Prepare list of community nodes
-        com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
-        com_ids = list(self.communities.keys())
         
-        # 2. Calculate Pairwise Scores using merger.calculate_connection_strength
-        closeness_map = defaultdict(lambda: defaultdict(float))
+        closeness_map = self.closeness_cache
         
-        # Optimize: Iterate only pairs that likely have edges? 
-        # Or iterating edges is faster than iterating all pairs O(N^2)
-        # Using the edge iteration method is still faster for sparse graphs, 
-        # but we want to invoke the specific function.
-        
-        # Approach A: Iterate edges and sum (Fast, logic inside merger.py function would be bypassed if we do it here)
-        # Approach B: Call merger.calculate_connection_strength(G, nodes_i, nodes_j) for all pairs.
-        # Since we want to "call merger.py", let's try to be smart. 
-        # We can detect neighbors first, then call the function for precise scoring.
-        
-        # Step 1: Fast neighbor detection
-        node_to_com = {}
-        for cid, nodes in com_nodes_map.items():
-            for n in nodes:
-                node_to_com[n] = cid
-                
-        neighbors = defaultdict(set)
-        for u, v in self.Gs.edges():
-            c1 = node_to_com.get(u)
-            c2 = node_to_com.get(v)
-            if c1 is not None and c2 is not None and c1 != c2:
-                neighbors[c1].add(c2)
-                neighbors[c2].add(c1)
-        
-        # Step 2: Call merger.py for identified neighbors
-        for c1, neighbor_set in neighbors.items():
-            for c2 in neighbor_set:
-                if c1 < c2: # Avoid double calc
-                    # CALL THE MERGER FUNCTION
-                    score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
-                    closeness_map[c1][c2] = score
-                    closeness_map[c2][c1] = score
+        # Recalculate only if cache is invalid
+        if not self.closeness_cache_valid:
+            # 1. Prepare list of community nodes
+            com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
+            
+            # 2. Calculate Pairwise Scores using merger.calculate_connection_strength
+            # Clear old cache
+            closeness_map.clear()
+            
+            # Step 1: Fast neighbor detection
+            node_to_com = {}
+            for cid, nodes in com_nodes_map.items():
+                for n in nodes:
+                    node_to_com[n] = cid
+                    
+            neighbors = defaultdict(set)
+            for u, v in self.Gs.edges():
+                c1 = node_to_com.get(u)
+                c2 = node_to_com.get(v)
+                if c1 is not None and c2 is not None and c1 != c2:
+                    neighbors[c1].add(c2)
+                    neighbors[c2].add(c1)
+            
+            # Step 2: Call merger.py for identified neighbors
+            for c1, neighbor_set in neighbors.items():
+                for c2 in neighbor_set:
+                    if c1 < c2: # Avoid double calc
+                        # CALL THE MERGER FUNCTION
+                        score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
+                        closeness_map[c1][c2] = score
+                        closeness_map[c2][c1] = score
+            
+            self.closeness_cache_valid = True
         
         summaries = []
         for com_id, com in self.communities.items():
@@ -699,13 +704,9 @@ class PCMCCEnvironment:
             sim_params = action.parameters
             current_seed = com.state.current_seed_set
             
-            # Use current environment state for context
-            N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
-                self.Gs, self.sn_nodes, self.fitness_space, hop=2
-            )
-            P_score = evaluator.DPADVEvaluator.calculate_positive_score(
-                self.Gs, self.fitness_space, self.search_space, 2, N_prob
-            )
+            # Use cached metrics
+            N_prob = self.N_prob
+            P_score = self.P_score
             
             # 2. Execute Evolutionary Step (Mutation -> Crossover -> Local Search)
             # A. Generate SI (Mutation)
@@ -731,7 +732,7 @@ class PCMCCEnvironment:
             gama_com = self.search_space # Simplified, or could be refined based on alpha
             
             S1_sim_new = evolution.local_search(
-                S1_sim, self.G, com_and_fs, self.hop, N_prob, gama_com
+                S1_sim, self.G, self.sn_nodes, com_and_fs, self.hop, N_prob, gama_com
             )
             if S1_sim_new != S1_sim:
                 S1_sim = S1_sim_new
@@ -879,13 +880,9 @@ class PCMCCEnvironment:
                 else:
                     sim_params = {} # Fallback to empty to use defaults
             
-            # Pre-calculate shared metrics
-            N_prob = evaluator.DPADVEvaluator.calculate_negative_probability(
-                self.Gs, self.sn_nodes, self.fitness_space, hop=2
-            )
-            P_score = evaluator.DPADVEvaluator.calculate_positive_score(
-                self.Gs, self.fitness_space, self.search_space, 2, N_prob
-            )
+            # Use cached metrics
+            N_prob = self.N_prob
+            P_score = self.P_score
             
             print("  -> Running Global Simulation for new parameters...")
             
@@ -917,7 +914,7 @@ class PCMCCEnvironment:
                 gama_com = self.search_space 
                 
                 S1_sim_new = evolution.local_search(
-                    S1_sim, self.G, com_and_fs, self.hop, N_prob, gama_com
+                    S1_sim, self.G, self.sn_nodes, com_and_fs, self.hop, N_prob, gama_com
                 )
                 if S1_sim_new != S1_sim:
                     S1_sim = S1_sim_new
