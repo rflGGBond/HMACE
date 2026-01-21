@@ -19,7 +19,7 @@ except ImportError:
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/IBMM/" 
+        output_dir = "../../results/logs/IBMM/repeats10_runs10000" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -381,10 +381,12 @@ if __name__ == "__main__":
         
         k_values = args.k
         avg_neg_nodes_COICM = []
+        avg_neg_nodes_MCICM = []
 
         for k in k_values:
             repeats = args.repeats
             current_k_coicm = []
+            current_k_mcicm = []
 
             for r in range(repeats):
                 current_seed = 42 + k + r * 1000
@@ -406,9 +408,17 @@ if __name__ == "__main__":
                 print(f"Running Monte Carlo Evaluation (COICM)...")
                 res_coicm = monte_carlo_evaluation(G, bestS, SN, model='COICM', runs=args.mc_runs)
                 print(f"Negatively Activated Nodes (COICM): {res_coicm:.2f}")
+                
+                # Evaluate MCICM
+                print(f"Running Monte Carlo Evaluation (MCICM)...")
+                res_mcicm = monte_carlo_evaluation(G, bestS, SN, model='MCICM', runs=args.mc_runs)
+                print(f"Negatively Activated Nodes (MCICM): {res_mcicm:.2f}")
+                
                 current_k_coicm.append(res_coicm)
+                current_k_mcicm.append(res_mcicm)
             
             avg_neg_nodes_COICM.append(sum(current_k_coicm) / len(current_k_coicm))
+            avg_neg_nodes_MCICM.append(sum(current_k_mcicm) / len(current_k_mcicm))
 
         # Plot COICM
         try:
@@ -430,3 +440,22 @@ if __name__ == "__main__":
             print(f"Saved plot to {os.path.join(output_fig_dir_coicm, f'COICM_{file_name}.png')}")
         except Exception as e:
             print(f"Error plotting COICM: {e}")
+        
+        # Plot MCICM
+        try:
+            output_fig_dir_mcicm = f"../../results/MCICM/IBMM/repeats{args.repeats}_runs{args.mc_runs}"
+            if not os.path.exists(output_fig_dir_mcicm):
+                os.makedirs(output_fig_dir_mcicm)
+            
+            plt.figure(figsize=(6, 6))
+            plt.plot(k_values, avg_neg_nodes_MCICM, marker='o', linestyle='--', label=file_name, color='salmon')
+            for x, y in zip(k_values, avg_neg_nodes_MCICM):
+                plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
+            plt.title(f'MCICM IBMM {file_name}')
+            plt.xlabel('k')
+            plt.ylabel('Negatively Activated Nodes')
+            plt.xticks(k_values)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_fig_dir_mcicm, f'MCICM_{file_name}.png'))
+        except Exception as e:
+            print(f"Error plotting MCICM: {e}")

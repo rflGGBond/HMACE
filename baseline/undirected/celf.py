@@ -19,7 +19,7 @@ except ImportError:
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/CELF/" 
+        output_dir = "../../results/logs/CELF/repeats10_runs10000" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")

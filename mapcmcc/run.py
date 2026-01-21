@@ -38,8 +38,10 @@ class LoggerWriter:
         self.log.flush()
 
 # Define graph types based on PCMCC reference
-DIRECTED_GRAPHS = {"email-Eu-core", "Email-EuAll", "p2p-Gnutella31", "soc-Epinions1", "p2p-Gnutella09", "congress-Twitter", "p2p-Gnutella08"}
-UNDIRECTED_GRAPHS = {"Email-Enron", "facebook", "HR", "BA3000", "ER3000", "RG3000", "WS3000"}
+DIRECTED_GRAPHS = {"email-Eu-core", "p2p-Gnutella31", "soc-Epinions1",
+                    "p2p-Gnutella09", "congress-Twitter", "p2p-Gnutella08", "filmtrust-trust", "twitter", "ciaodvd", "soc-advogato", "soc-anybeat", "soc-epinions"}
+UNDIRECTED_GRAPHS = {"BA3000", "ER3000", "RG3000", "WS3000", "as-caida", "arenas-email",
+                    "ego-facebook", "ER_1k_40k", "CL-10000-1d7-trial1", "fb-pages-tvshow", "soc-hamsterster", "geo1k_10k", "SW10000"}
 
 def main():
     # Parse command line arguments

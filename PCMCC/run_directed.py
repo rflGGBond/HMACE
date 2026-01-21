@@ -1186,20 +1186,11 @@ if __name__ == "__main__":
     # Generate timestamp once
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-    SN_dic = {}
-    SN_dic["email-Eu-core"] = select_SN("email-Eu-core", 50)
+    SN_dic = {"email-Eu-core": [], "p2p-Gnutella31": [], "soc-Epinions1": [], "p2p-Gnutella09": [], "p2p-Gnutella08": [], 
+                "congress-Twitter": [], "filmtrust-trust": [], "twitter": [], "ciaodvd": [], "soc-advogato": [], "soc-anybeat": [], "soc-epinions": []}
     
-    SN_dic["Email-EuAll"] = select_SN("Email-EuAll", 50)
-    
-    SN_dic["p2p-Gnutella31"] = select_SN("p2p-Gnutella31", 50)
-    
-    SN_dic["soc-Epinions1"] = select_SN("soc-Epinions1", 50)
-    
-    SN_dic["p2p-Gnutella09"] = select_SN("p2p-Gnutella09", 50)
-
-    SN_dic["p2p-Gnutella08"] = select_SN("p2p-Gnutella08", 50)
-
-    SN_dic["congress-Twitter"] = select_SN("congress-Twitter", 50)
+    for graph_name in SN_dic.keys():
+        SN_dic[graph_name] = select_SN(graph_name, 50)
 
     graphs = args.graphs
 

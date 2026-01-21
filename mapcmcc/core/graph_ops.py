@@ -52,6 +52,15 @@ def detect_communities(G, num_communities):
                 pattern2_a = r"\d+"
                 numbers_a = [int(match2_a) for match2_a in re.findall(pattern2_a, match1_a)]
                 a_rs_part.append(numbers_a)
+            
+            # Fix infinite loop: Force split if Leiden returns < 2 partitions
+            if len(a_rs_part) < 2:
+                print(f"Warning: Leiden could not split community. Forcing random split.")
+                target_nodes = rs_part[max_indices]
+                mid = len(target_nodes) // 2
+                if mid > 0:
+                    a_rs_part = [target_nodes[:mid], target_nodes[mid:]]
+
             del rs_part[max_indices]
             rs_part[max_indices:max_indices] = copy.deepcopy(a_rs_part)
 

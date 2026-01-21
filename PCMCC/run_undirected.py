@@ -80,6 +80,18 @@ def communityDivision_1(G_1, C_1):
                 pattern2_a = r"\d+"
                 numbers_a = [int(match2_a) for match2_a in re.findall(pattern2_a, match1_a)]
                 a_rs_part.append(numbers_a)
+            
+            # Force split if Leiden returns only 1 partition (stuck loop fix)
+            if len(a_rs_part) < 2:
+                print(f"Warning: Leiden could not split community of size {len(rs_part[max_indices])}. Forcing random split.")
+                target_nodes = rs_part[max_indices]
+                mid = len(target_nodes) // 2
+                if mid > 0:
+                    a_rs_part = [target_nodes[:mid], target_nodes[mid:]]
+                else:
+                     # Should not happen if we pick largest, unless all are size 1
+                    pass
+
             del rs_part[max_indices]
             rs_part[max_indices:max_indices] = copy.deepcopy(a_rs_part)
 
@@ -1179,20 +1191,11 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     SN_size = 50
-    SN_dic = {}
-    SN_dic["facebook"] = select_SN("facebook", SN_size)
+    SN_dic = {"facebook": [], "HR": [], "BA3000": [], "ER3000": [], "RG3000": [], "WS3000": [], "fb-pages-sport": [],
+     "ego-facebook": [], "ER_1k_40k": [], "geo1k_10k": [], "fb-pages-tvshow": [], "SW10000": [], "soc-hamsterster": [], "CL-10000-1d7-trial1": []}
     
-    SN_dic["Email-Enron"] = select_SN("Email-Enron", SN_size)
-
-    SN_dic["HR"] = select_SN("HR", SN_size)
-
-    SN_dic["BA3000"] = select_SN("BA3000", SN_size)
-
-    SN_dic["ER3000"] = select_SN("ER3000", SN_size)
-
-    SN_dic["RG3000"] = select_SN("RG3000", SN_size)
-
-    SN_dic["WS3000"] = select_SN("WS3000", SN_size)
+    for graph_name in SN_dic.keys():
+        SN_dic[graph_name] = select_SN(graph_name, SN_size)
 
     graphs = args.graphs
 

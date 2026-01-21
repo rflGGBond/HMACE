@@ -13,7 +13,7 @@ from select_SN import select_SN
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/Max-Degree/" 
+        output_dir = "../../results/logs/Max-Degree/repeats10_runs10000" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -146,7 +146,10 @@ if __name__ == "__main__":
                 print(f"\nMax-Degree: {file_name}, k={k}, run={r+1}/{repeats}")
                 
                 # --- Max-Degree Selection Strategy ---
+                start_time = time.time()
                 bestS = candidates_sorted[:k]
+                end_time = time.time()
+                print(f"Time taken: {end_time - start_time:.4f}s")
                 print("Selected Seeds:", bestS)
 
                 # Evaluate COICM

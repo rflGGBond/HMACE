@@ -1,10 +1,11 @@
 import random
 import os
 from tqdm import tqdm
+random.seed(42)
 
 if __name__ == "__main__":
     # 要处理的文件名列表
-    graphs = ["p2p-Gnutella08.txt"]
+    graphs = ["CL-10000-1d7-trial1.txt"]
     
     # 权重列表
     weights = [0.01, 0.05, 0.2]

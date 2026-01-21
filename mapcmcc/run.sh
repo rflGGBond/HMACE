@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="BA3000 ER3000 RG3000 WS3000 email-Eu-core congress-Twitter p2p-Gnutella08 p2p-Gnutella31 soc-Epinions1"
+GRAPHS="CL-10000-1d7-trial1"
 TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20

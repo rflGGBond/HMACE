@@ -13,7 +13,7 @@ from select_SN import select_SN
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/Random/" 
+        output_dir = "../../results/logs/Random/repeats10_runs10000" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -143,7 +143,10 @@ if __name__ == "__main__":
                 print(f"\nRandom: {file_name}, k={k}, run={r+1}/{repeats}")
                 
                 # --- Random Selection Strategy ---
+                start_time = time.time()
                 bestS = random.sample(candidates, k)
+                end_time = time.time()
+                print(f"Time taken: {end_time - start_time:.4f}s")
                 print("Selected Seeds:", bestS)
 
                 # Evaluate COICM
