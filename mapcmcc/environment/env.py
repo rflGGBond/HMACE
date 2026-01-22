@@ -78,23 +78,6 @@ class PCMCCEnvironment:
         """
         self.pending_merge_suggestions = suggestions
 
-    def _get_node_gamma_map(self):
-        """
-        Calculates Gamma(C(v)) for all nodes currently in communities.
-        Used for Gamma-aware DPADV calculation.
-        """
-        node_gamma_map = {}
-        # Iterate over all communities
-        for cid, com in self.communities.items():
-            # Calculate gamma for this community
-            gamma_val = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
-            
-            # Map every node in this community to this gamma value
-            for node in com.state.nodes:
-                node_gamma_map[node] = gamma_val
-                
-        return node_gamma_map
-
     def _convert_index(self, islands):
         """
         Helper to flatten population indices for shared memory.
@@ -236,12 +219,8 @@ class PCMCCEnvironment:
             initial_seed = random.sample(candidates, k=min(budgets[i], len(candidates)))
             
             # Calculate initial DPADV
-            # Note: Gamma map is tricky here as communities are just being created.
-            # But we can calculate it now.
-            node_gamma_map = self._get_node_gamma_map()
-            
             score = evaluator.DPADVEvaluator.calculate_fitness(
-                initial_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=node_gamma_map
+                initial_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
             )
             self.communities[i].update_best_solution(initial_seed, score)
 
@@ -351,25 +330,8 @@ class PCMCCEnvironment:
                     unique_seed.extend(random.sample(candidates, min(len(candidates), needed)))
             
             # Calculate New Fitness
-            # Need updated gamma map? 
-            # The new community is hypothetical. 
-            # Ideally, we should simulate the new gamma for the merged community.
-            # But for now, let's use the CURRENT map (gamma of component parts) or RECALCULATE for the new potential community.
-            # The formula uses Gamma(C(v)). If C(v) becomes the merged community, Gamma changes.
-            # So we should calculate Gamma for the NEW merged set of nodes.
-            
-            # 1. Calculate Gamma for the potential merged community
-            new_gamma = gamma_merger.calculate_gamma(self.Gs, list(new_nodes))
-            
-            # 2. Create a temporary gamma map for evaluation
-            # Start with current map
-            temp_gamma_map = self._get_node_gamma_map()
-            # Update for nodes in the new merged community
-            for node in new_nodes:
-                temp_gamma_map[node] = new_gamma
-            
             new_score = evaluator.DPADVEvaluator.calculate_fitness(
-                unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=temp_gamma_map
+                unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
             )
             new_com.update_best_solution(unique_seed, new_score)
             
@@ -463,12 +425,7 @@ class PCMCCEnvironment:
             deltaF = benchmark_dpadv - current_dpadv
             deltaT = self.current_gen - com.state.benchmark_gen
             
-            # --- Option C: Gamma Adaptive Threshold ---
-            # High gamma (closed) -> Higher threshold -> Must improve more or merge
-            gamma_val = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
-            mu_param = 0.5 # Adjustable parameter
-            threshold = theta * deltaT * (com.state.budget / k) * (1 + mu_param * gamma_val)
-            # threshold = theta * deltaT * com.state.budget / k
+            threshold = theta * deltaT * com.state.budget / k
             
             # PCMCC Logic:
             # if (deltaF <= threshold) and (deltaT >= s_l): merge
@@ -716,6 +673,23 @@ class PCMCCEnvironment:
             
             self.closeness_cache_valid = True
         
+        # --- Calculate Delta Ref (Early Global Average Improvement) ---
+        T0 = 3
+        delta_ref = 1.0 # Default to avoid div by zero if not enough history
+        
+        if len(self.global_dpadv_history) > T0:
+            # D(0), ..., D(T0) are first T0+1 elements
+            # Delta_ref = 1/T0 * Sum(D(t) - D(t+1)) for t=0 to T0-1
+            # Which simplifies to (D(0) - D(T0)) / T0
+            D0 = self.global_dpadv_history[0]
+            DT0 = self.global_dpadv_history[T0]
+            
+            # Improvement is (D(t) - D(t+1)) assuming D is minimization (fitness)
+            # If D0 > DT0, improvement is positive
+            avg_imp = (D0 - DT0) / T0
+            if avg_imp > 1e-6:
+                delta_ref = avg_imp
+        
         summaries = []
         for com_id, com in self.communities.items():
             # Get calculated closeness
@@ -736,6 +710,19 @@ class PCMCCEnvironment:
                 if delta_t > 0:
                     imp_rate = delta_f / delta_t
             
+            # --- Danger Score Calculation ---
+            # 1. Gamma (Clusteredness)
+            gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
+            
+            # 2. Stagnation
+            # Stagnation = max(0, 1 - Delta_i / (Delta_ref + epsilon))
+            # Delta_i = imp_rate (Average improvement in current window)
+            epsilon = 1e-6
+            stagnation_i = max(0.0, 1.0 - (imp_rate / (delta_ref + epsilon)))
+            
+            # 3. Danger Score
+            danger_i = gamma_i * stagnation_i
+            
             summaries.append(CommunitySummary(
                 community_id=com_id,
                 budget=com.state.budget,
@@ -743,7 +730,8 @@ class PCMCCEnvironment:
                 improvement_rate=imp_rate, 
                 diversity=com.state.diversity_score,
                 boundary_risk=len(com.state.boundary_nodes) / max(1, len(com.state.nodes)),
-                closeness_info=closeness
+                closeness_info=closeness,
+                danger_score=danger_i
             ))
             
         return MetaObservation(
@@ -851,7 +839,7 @@ class PCMCCEnvironment:
             
             # Calculate Global DPADV for this candidate configuration
             new_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
-                global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=node_gamma_map
+                global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
             )
             # new_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
             #     global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
@@ -1025,7 +1013,7 @@ class PCMCCEnvironment:
                      # Calculate local fitness for consistency
                      com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
                      local_fitness = evaluator.DPADVEvaluator.calculate_fitness(
-                        s1_sim, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
+                        s1_sim, self.G, self.sn_nodes, com_and_fs, self.hop
                      )
                      com.update_best_solution(s1_sim, local_fitness)
                      com.reset_stagnation()

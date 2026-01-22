@@ -105,11 +105,10 @@ class DPADVEvaluator:
         return rs_P_S
 
     @staticmethod
-    def calculate_fitness(seed, G, SN, com_and_fs, hop, node_gamma_map=None):
+    def calculate_fitness(seed, G, SN, com_and_fs, hop):
         """
         Calculates the fitness (DPADV) of a given seed set.
         Refactored from fitness_C_7.
-        Supports Gamma-aware DPADV if node_gamma_map is provided.
         """
         effect_fc = 0
         ZP_fc = []
@@ -164,22 +163,8 @@ class DPADVEvaluator:
                 for tau_f in range(h + 1, hop + 1):
                     apN_fc[v, tau_f] = apN_fc[v, h] + pN_fc[v, h + 1]
                     
-        # Gamma-aware DPADV Implementation
-        # DPADV_gamma = |SN| + Sum((1 - gamma(C(v))) * apN(v, h))
-        
-        sum_val = 0
-        gamma_map = node_gamma_map if node_gamma_map is not None else {}
-        
         for u in com_and_fs:
-             gamma = gamma_map.get(u, 0.0)
-             weight = 1.0 - gamma
-             sum_val += weight * apN_fc[u, hop]
-             
-        effect_fc = len(SN) + sum_val
-
-        # Original Formula (Commented out)
-        # for u in com_and_fs:
-        #     effect_fc += apN_fc[u, hop]
+            effect_fc += apN_fc[u, hop]
 
         return effect_fc
 

@@ -41,12 +41,40 @@ class CommunityAgent(BaseAgent):
 
         obs_json_str = json.dumps(obs_dict, default=str)
         
+        # --- DANGER ANALYSIS (Level 0/1/2) ---
+        danger_score = obs_dict.get("danger_score", 0.0)
+        danger_level = 0
+        if danger_score >= 0.6:
+            danger_level = 2 # Critical
+        elif danger_score >= 0.3:
+            danger_level = 1 # Warning
+            
+        danger_context = ""
+        if danger_level == 1:
+            danger_context = f"""
+            WARNING: DANGER LEVEL 1 DETECTED (Score: {danger_score:.2f}).
+            The community is showing signs of stagnation and closure.
+            REQUIRED ACTION:
+            - You MUST adopt a more AGGRESSIVE exploration strategy.
+            - Prioritize 'adjust_parameters' to increase exploration (higher cr2, higher alpha) OR 'propose_candidate' with BOUNDARY INJECTION.
+            """
+        elif danger_level == 2:
+            danger_context = f"""
+            CRITICAL: DANGER LEVEL 2 DETECTED (Score: {danger_score:.2f}).
+            The community is critically stagnant. Meta-Agent may intervene soon.
+            REQUIRED ACTION:
+            - Maximize exploration immediately.
+            - If proposing candidates, you MUST include boundary nodes to break the structure.
+            """
+
         try:
             # --- STEP 1: DECIDE ACTION TYPE (Low Temperature for Stability) ---
             step1_system_prompt = f"""
             You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm.
             
             GOAL: Minimize 'DPADV' (Blocking Influence) for your community.
+            
+            {danger_context}
             
             TASK: Analyze the current state and decide which action mode to take:
             A. "adjust_parameters": Tune evolutionary parameters if performance is stagnant or needs fine-tuning.
@@ -105,6 +133,42 @@ class CommunityAgent(BaseAgent):
                 step2_json = json.loads(response_step2_str)
                 
                 action.parameters = step2_json.get("parameters")
+                
+                # --- Danger-based Parameter Correction (Rule-based Override) ---
+                if danger_score > 0 and action.parameters:
+                    # Constants
+                    CR2_MAX = 1.0
+                    BETA_MIN = 1.0
+                    ALPHA_MAX = 30.0
+                    
+                    # Scaling Factors (eta)
+                    ETA_1 = 0.5  # For cr2 (0-1 scale)
+                    ETA_2 = 5.0  # For beta (1-20 scale)
+                    ETA_3 = 10.0 # For alpha (1-30 scale)
+                    
+                    # Original values
+                    cr2 = float(action.parameters.get("cr2", 0.5))
+                    beta = float(action.parameters.get("beta", 5.0))
+                    alpha = float(action.parameters.get("alpha", 10.0))
+                    
+                    # Apply Rules
+                    # cr2 <- min(cr2_max, cr2 + eta1 * Danger)
+                    new_cr2 = min(CR2_MAX, cr2 + ETA_1 * danger_score)
+                    
+                    # beta <- max(beta_min, beta - eta2 * Danger)
+                    new_beta = max(BETA_MIN, beta - ETA_2 * danger_score)
+                    
+                    # alpha <- min(alpha_max, alpha + eta3 * Danger)
+                    new_alpha = min(ALPHA_MAX, alpha + ETA_3 * danger_score)
+                    
+                    # Update Action
+                    action.parameters["cr2"] = round(new_cr2, 2)
+                    action.parameters["beta"] = round(new_beta, 2)
+                    action.parameters["alpha"] = round(new_alpha, 2)
+                    
+                    if danger_level > 0:
+                        print(f"Agent {self.agent_id}: Danger Correction Applied (Score: {danger_score:.2f})")
+                        print(f"  cr2: {cr2} -> {new_cr2:.2f} | beta: {beta} -> {new_beta:.2f} | alpha: {alpha} -> {new_alpha:.2f}")
 
             elif action_type == "propose_candidate":
                 # Mode B: High/Adaptive Temperature
@@ -118,13 +182,23 @@ class CommunityAgent(BaseAgent):
                      # Fallback if no history yet
                      history_str = f"{{ {observation.current_seed_set} }} {{ {observation.current_dpadv} }}\n"
 
+                # Boundary Injection Context
+                boundary_context = ""
+                if "boundary_info" in obs_dict and obs_dict["boundary_info"]:
+                     b_nodes = obs_dict["boundary_info"].get("boundary_nodes", [])
+                     if b_nodes:
+                         boundary_context = f"Available BOUNDARY NODES (Key for breaking closed structures): {b_nodes}"
+
                 step2_system_prompt = f"""
                 Description of problem and solution properties
                 You are given a list of top potential nodes with scores: {observation.top_k_score_nodes}. Your task is to find a seed set of size {observation.budget}, with the lowest possible DPADV score (blocking influence), that minimizes the negative influence.
+                
+                {danger_context}
+                {boundary_context}
 
                 In-context examples (population)
                 Below are some previous seed sets and their DPADV scores. The sets are arranged in descending order based on their scores, where lower values are better.
-
+                
                 {history_str}
 
                 Task instructions

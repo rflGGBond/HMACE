@@ -39,6 +39,7 @@ class CommunitySummary:
     diversity: float
     boundary_risk: float
     closeness_info: Dict[int, float] # neighbor_id -> closeness
+    danger_score: float = 0.0 # Gamma * Stagnation
 
 @dataclass
 class MetaObservation:

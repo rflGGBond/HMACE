@@ -109,8 +109,10 @@ class MetaAgent(BaseAgent):
         These are valid communities.
         
         {struggling_info_str}
+        {danger_info_str}
+        
         These communities are improving too slowly based on their budget allocation. 
-        PRIORITIZE merging these communities with their strongly connected neighbors (check 'closeness_info') to pool resources.
+        PRIORITIZE merging these communities (especially CRITICAL DANGER ones) with their strongly connected neighbors (check 'closeness_info') to pool resources.
         
         In-context examples:
         {history_str}
