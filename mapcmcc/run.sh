@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="CL-10000-1d7-trial1"
+GRAPHS="BA3000"
 TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20

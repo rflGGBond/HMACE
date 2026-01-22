@@ -6,7 +6,7 @@ import copy
 from typing import List, Dict, Any
 from collections import defaultdict
 
-from ..core import graph_ops, evaluator, evolution, merger
+from ..core import graph_ops, evaluator, evolution, merger, gamma_merger
 from .community import Community
 from ..utils.types import CommunityAction, MetaAction, MetaObservation, CommunitySummary
 import random
@@ -77,6 +77,23 @@ class PCMCCEnvironment:
         Stores merge suggestions from Meta-Agent to be executed in the next step.
         """
         self.pending_merge_suggestions = suggestions
+
+    def _get_node_gamma_map(self):
+        """
+        Calculates Gamma(C(v)) for all nodes currently in communities.
+        Used for Gamma-aware DPADV calculation.
+        """
+        node_gamma_map = {}
+        # Iterate over all communities
+        for cid, com in self.communities.items():
+            # Calculate gamma for this community
+            gamma_val = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
+            
+            # Map every node in this community to this gamma value
+            for node in com.state.nodes:
+                node_gamma_map[node] = gamma_val
+                
+        return node_gamma_map
 
     def _convert_index(self, islands):
         """
@@ -219,8 +236,12 @@ class PCMCCEnvironment:
             initial_seed = random.sample(candidates, k=min(budgets[i], len(candidates)))
             
             # Calculate initial DPADV
+            # Note: Gamma map is tricky here as communities are just being created.
+            # But we can calculate it now.
+            node_gamma_map = self._get_node_gamma_map()
+            
             score = evaluator.DPADVEvaluator.calculate_fitness(
-                initial_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+                initial_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=node_gamma_map
             )
             self.communities[i].update_best_solution(initial_seed, score)
 
@@ -249,17 +270,35 @@ class PCMCCEnvironment:
             
             # --- Logic for Strict Validation (Meta-Agent) ---
             if strict_validation:
-                # --- Filter 1: Closeness Check ---
-                closeness_sum = 0
+                # --- Filter 1: Gamma-Reduction Merge Score Check ---
+                merge_score_sum = 0
                 for i in range(len(valid_group)):
                     for j in range(i + 1, len(valid_group)):
                         c1, c2 = valid_group[i], valid_group[j]
-                        score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
-                        closeness_sum += score
+                        score = gamma_merger.calculate_merge_score(
+                            self.Gs, 
+                            com_nodes_map[c1], 
+                            com_nodes_map[c2],
+                            lambda_param=0.8,
+                            alpha_param=1.5
+                        )
+                        merge_score_sum += score
                 
-                if closeness_sum <= 0:
-                    print(f"  -> REJECTED Group {valid_group}: Closeness <= 0 ({closeness_sum})")
+                if merge_score_sum <= 0:
+                    print(f"  -> REJECTED Group {valid_group}: Gamma Merge Score <= 0 ({merge_score_sum:.4f})")
                     continue
+
+                # --- Filter 1: Closeness Check ---
+                # closeness_sum = 0
+                # for i in range(len(valid_group)):
+                #     for j in range(i + 1, len(valid_group)):
+                #         c1, c2 = valid_group[i], valid_group[j]
+                #         score = merger.calculate_connection_strength(self.Gs, com_nodes_map[c1], com_nodes_map[c2])
+                #         closeness_sum += score
+                
+                # if closeness_sum <= 0:
+                #     print(f"  -> REJECTED Group {valid_group}: Closeness <= 0 ({closeness_sum})")
+                #     continue
             
             # --- Preparation (Common) ---
             total_budget = 0
@@ -312,8 +351,25 @@ class PCMCCEnvironment:
                     unique_seed.extend(random.sample(candidates, min(len(candidates), needed)))
             
             # Calculate New Fitness
+            # Need updated gamma map? 
+            # The new community is hypothetical. 
+            # Ideally, we should simulate the new gamma for the merged community.
+            # But for now, let's use the CURRENT map (gamma of component parts) or RECALCULATE for the new potential community.
+            # The formula uses Gamma(C(v)). If C(v) becomes the merged community, Gamma changes.
+            # So we should calculate Gamma for the NEW merged set of nodes.
+            
+            # 1. Calculate Gamma for the potential merged community
+            new_gamma = gamma_merger.calculate_gamma(self.Gs, list(new_nodes))
+            
+            # 2. Create a temporary gamma map for evaluation
+            # Start with current map
+            temp_gamma_map = self._get_node_gamma_map()
+            # Update for nodes in the new merged community
+            for node in new_nodes:
+                temp_gamma_map[node] = new_gamma
+            
             new_score = evaluator.DPADVEvaluator.calculate_fitness(
-                unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+                unique_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=temp_gamma_map
             )
             new_com.update_best_solution(unique_seed, new_score)
             
@@ -321,7 +377,8 @@ class PCMCCEnvironment:
             gain = weighted_baseline_score - new_score
             
             if strict_validation:
-                print(f"  -> Evaluation: Group {valid_group} | Closeness: {closeness_sum:.2f} | Baseline: {weighted_baseline_score:.4f} | New: {new_score:.4f} | Gain: {gain:.4f}")
+                print(f"  -> Evaluation: Group {valid_group} | Gamma Score: {merge_score_sum:.4f} | Baseline: {weighted_baseline_score:.4f} | New: {new_score:.4f} | Gain: {gain:.4f}")
+                # print(f"  -> Evaluation: Group {valid_group} | Closeness: {closeness_sum:.2f} | Baseline: {weighted_baseline_score:.4f} | New: {new_score:.4f} | Gain: {gain:.4f}")
                 
                 # --- Filter 2: Gain Check ---
                 if gain > 0:
@@ -406,7 +463,12 @@ class PCMCCEnvironment:
             deltaF = benchmark_dpadv - current_dpadv
             deltaT = self.current_gen - com.state.benchmark_gen
             
-            threshold = theta * deltaT * com.state.budget / k
+            # --- Option C: Gamma Adaptive Threshold ---
+            # High gamma (closed) -> Higher threshold -> Must improve more or merge
+            gamma_val = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
+            mu_param = 0.5 # Adjustable parameter
+            threshold = theta * deltaT * (com.state.budget / k) * (1 + mu_param * gamma_val)
+            # threshold = theta * deltaT * com.state.budget / k
             
             # PCMCC Logic:
             # if (deltaF <= threshold) and (deltaT >= s_l): merge
@@ -428,7 +490,15 @@ class PCMCCEnvironment:
         # 2. Find Merge Partners (Pairing)
         # Use centralized logic from merger.py
         com_nodes_map = {cid: com.state.nodes for cid, com in self.communities.items()}
-        merge_groups = merger.identify_merge_groups(self.G, com_nodes_map, candidates)
+        # Use new gamma-reduction strategy
+        merge_groups = gamma_merger.identify_merge_groups_gamma(
+            self.G, 
+            com_nodes_map, 
+            candidates, 
+            lambda_param=0.8, 
+            alpha_param=1.5
+        )
+        # merge_groups = merger.identify_merge_groups(self.G, com_nodes_map, candidates)
         
         # 3. Execute Merges
         if merge_groups:
@@ -526,11 +596,11 @@ class PCMCCEnvironment:
                 
                 # Evaluate Offspring
                 effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
-                    S1_new, self.G, self.sn_nodes, com_and_fs, self.hop
+                    S1_new, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
                 )
                 
                 effectSI = evaluator.DPADVEvaluator.calculate_fitness(
-                    SI_new, self.G, self.sn_nodes, com_and_fs, self.hop
+                    SI_new, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
                 )
                 
                 # Update Population (Greedy Selection)
@@ -708,6 +778,9 @@ class PCMCCEnvironment:
             N_prob = self.N_prob
             P_score = self.P_score
             
+            # Need gamma map for local search and evaluation
+            node_gamma_map = self._get_node_gamma_map()
+            
             # 2. Execute Evolutionary Step (Mutation -> Crossover -> Local Search)
             # A. Generate SI (Mutation)
             SI = copy.deepcopy(current_seed)
@@ -778,8 +851,11 @@ class PCMCCEnvironment:
             
             # Calculate Global DPADV for this candidate configuration
             new_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
-                global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+                global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2, node_gamma_map=node_gamma_map
             )
+            # new_global_dpadv = evaluator.DPADVEvaluator.calculate_fitness(
+            #     global_candidate_seed, self.Gs, self.sn_nodes, self.fitness_space, hop=2
+            # )
             
             # Compare with current global best
             if new_global_dpadv < self.global_best_dpadv:
@@ -949,7 +1025,7 @@ class PCMCCEnvironment:
                      # Calculate local fitness for consistency
                      com_and_fs = set(com.state.nodes).union(set(self.fitness_space))
                      local_fitness = evaluator.DPADVEvaluator.calculate_fitness(
-                        s1_sim, self.G, self.sn_nodes, com_and_fs, self.hop
+                        s1_sim, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
                      )
                      com.update_best_solution(s1_sim, local_fitness)
                      com.reset_stagnation()

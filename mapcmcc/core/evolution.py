@@ -46,7 +46,7 @@ def sample(l1, w1, k):
 
     return rs
 
-def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
+def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com, node_gamma_map=None):
     """
     Simplified interface for local search, operating on standard lists.
     Returns the optimized seed set S1.
@@ -58,7 +58,7 @@ def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
         return S1
     
     # Calculate initial fitness to ensure strict improvement
-    current_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
+    current_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop, node_gamma_map)
     
     while True:
         discount_P_score_diff = []
@@ -197,7 +197,7 @@ def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
 
         # 4. Check if improvement occurred (Strict Monotonicity Check)
         # Calculate real fitness of the candidate S1
-        new_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
+        new_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop, node_gamma_map)
         
         # If real fitness improved, keep change and update current_fitness
         if new_fitness < current_fitness:
@@ -639,7 +639,8 @@ def evolve_community(
     G, SN, com_and_fs, hop, N_prob,
     com_sn, budget, com_res, Ni, cOne, cTwo,
     islands_index, islands_effect_index, locks_index, P_score, last_p,
-    share_locks_index, begin_flag, gama_com, com_gen_acc
+    share_locks_index, begin_flag, gama_com, com_gen_acc,
+    node_gamma_map=None
 ):
     """
     Main evolution logic for a single community subpopulation.
@@ -700,7 +701,8 @@ def evolve_community(
                 _evolve_subpopulation_step(
                     S1, SI, budget, cOne, cTwo, com_sn, P_score, G, SN, com_and_fs, hop,
                     shared_islands, shared_islands_effect,
-                    islands_index, islands_effect_index, community_id, subpop_id, index_s1, I
+                    islands_index, islands_effect_index, community_id, subpop_id, index_s1, I,
+                    node_gamma_map
                 )
 
             # 3. Local Search Helper
@@ -708,7 +710,8 @@ def evolve_community(
                 community_id, subpop_id, Ni, budget,
                 shared_islands, shared_islands_effect,
                 islands_index, islands_effect_index,
-                G, SN, com_and_fs, hop, N_prob, gama_com
+                G, SN, com_and_fs, hop, N_prob, gama_com,
+                node_gamma_map
             )
 
         # --- SYNCHRONIZATION & COMMUNICATION ---

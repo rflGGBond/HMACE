@@ -67,7 +67,7 @@ def main():
     np.random.seed(42)
 
     # --- Setup Logging ---
-    log_dir = f"../results/logs/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+    log_dir = f"../results/logs/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
@@ -285,7 +285,7 @@ def main():
         
         # 1. COICM Plot
         try:
-            output_fig_dir_coicm = f"../results/COICM/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../results/COICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -311,7 +311,7 @@ def main():
 
         # 2. MCICM Plot
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
