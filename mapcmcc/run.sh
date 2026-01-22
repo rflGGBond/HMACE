@@ -13,7 +13,7 @@ REPEATS=10
 # Options: local, openai
 LLM_PROVIDER="local" 
 # LLM_MODEL="gpt-4o" 
-LLM_MODEL="Qwen2.5-1.5B-Instruct"
+LLM_MODEL="Qwen2.5-7B-Instruct"
 API_KEY="sk-20L54633d745bf1b62dd4e22dc976f663fbc69695e4WSh1S" 
 MODEL_ROOT="../../models"
 

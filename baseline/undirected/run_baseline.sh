@@ -17,13 +17,13 @@ UNDIRECTED_GRAPHS=""
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS as-caida"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS arenas-email"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS slavko"
-# UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS ego-facebook"
+UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS ego-facebook"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS deezer_europe"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS fb-pages-tvshow"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS soc-hamsterster"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS fb-pages-sport"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS SW10000"
-UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS CL-10000-1d7-trial1"
+# UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS CL-10000-1d7-trial1"
 
 
 
@@ -35,13 +35,13 @@ echo "Graphs: $UNDIRECTED_GRAPHS"
 echo "--------------------------------"
 
 if [ -n "$UNDIRECTED_GRAPHS" ]; then
-    # Random
-    echo "Running Random Baseline..."
-    python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # Random
+    # echo "Running Random Baseline..."
+    # python3 random_select.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
     
-    # Max-Degree
-    echo "Running Max-Degree Baseline..."
-    python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # Max-Degree
+    # echo "Running Max-Degree Baseline..."
+    # python3 max_degree.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
     
     # # CMIA-H
     # echo "Running CMIA-H Baseline..."
@@ -55,9 +55,9 @@ if [ -n "$UNDIRECTED_GRAPHS" ]; then
     # echo "Running CELF Baseline..."
     # python3 celf.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # DDSE
-    echo "Running DDSE Baseline..."
-    python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # DDSE
+    # echo "Running DDSE Baseline..."
+    # python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # # SEA-PEA
     # echo "Running SEA-PEA Baseline..."

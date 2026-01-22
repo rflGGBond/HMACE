@@ -8,7 +8,7 @@ MC_RUNS=10000
 # Default graphs
 # Comment out graphs you don't want to run
 DIRECTED_GRAPHS=""
-DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella08"
+# DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella08"
 # DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella09"
 # DIRECTED_GRAPHS="$DIRECTED_GRAPHS congress-Twitter"
 # DIRECTED_GRAPHS="$DIRECTED_GRAPHS p2p-Gnutella31"
