@@ -153,19 +153,32 @@ class Community:
         # Find neighbors of community nodes that are NOT in this community
         community_nodes_set = set(self.state.nodes)
         boundary_nodes = set()
-        neighbor_communities = set()
         
         # This calculation can be expensive, so maybe do it only periodically or simplified
         # For now, we assume G is available.
         # Ideally, 'neighbor_community_ids' should be passed from Environment because Community doesn't know others.
         # So we only calculate 'boundary_nodes' (nodes in this community that have edges to outside)
         
+        is_directed = G.is_directed() if hasattr(G, "is_directed") else False
+
         for u in self.state.nodes:
             is_boundary = False
-            for v in G.neighbors(u):
-                if v not in community_nodes_set:
-                    is_boundary = True
-                    break
+            
+            # Use chain or just iterate twice to avoid creating large lists
+            # 1. Outgoing / Undirected Neighbors
+            if not is_boundary:
+                for v in G.neighbors(u):
+                    if v not in community_nodes_set:
+                        is_boundary = True
+                        break
+            
+            # 2. Incoming Neighbors (Only for Directed)
+            if is_directed and not is_boundary:
+                for v in G.predecessors(u):
+                    if v not in community_nodes_set:
+                        is_boundary = True
+                        break
+                        
             if is_boundary:
                 boundary_nodes.add(u)
         

@@ -31,6 +31,28 @@ class MetaAgent(BaseAgent):
         struggling_info_str = f"Communities needing merge (Low Improvement Rate <= Target): {struggling_communities}"
         print(f"Meta-Agent Analysis: {struggling_info_str}")
 
+        # --- Identify High Danger Communities ---
+        danger_communities = []
+        critical_danger_communities = []
+        for s in observation.community_summaries:
+            d_score = getattr(s, 'danger_score', 0.0) # Safety getattr
+            if d_score >= 0.6:
+                critical_danger_communities.append(f"{s.community_id} (Score: {d_score:.2f})")
+            elif d_score >= 0.3:
+                danger_communities.append(f"{s.community_id} (Score: {d_score:.2f})")
+        
+        danger_info_str = ""
+        if danger_communities or critical_danger_communities:
+            danger_info_str = "DANGER ALERTS:\n"
+            if critical_danger_communities:
+                danger_info_str += f"- CRITICAL DANGER (Level 2 - MUST MERGE/RESTRUCTURE): {critical_danger_communities}\n"
+            if danger_communities:
+                danger_info_str += f"- WARNING (Level 1 - Monitor/Tune): {danger_communities}\n"
+        else:
+            danger_info_str = "No communities currently in danger zone.\n"
+        
+        print(f"Meta-Agent Danger Analysis: {danger_info_str.strip()}")
+
         # Get valid IDs for prompt grounding
         valid_ids = [s.community_id for s in observation.community_summaries]
         num_communities = len(valid_ids)
@@ -80,6 +102,7 @@ class MetaAgent(BaseAgent):
         1. PARAMETER OPTIMIZATION:
         - Analyze the parameter history.
         - Select high-performing sets, crossover and mutate them to generate new 'global_baselines'.
+        - ACTION C (Forced Perturbation): If CRITICAL DANGER communities exist, you MUST set aggressive parameters (e.g., Alpha > 20.0, CR2 > 0.8, Beta < 5.0) to force "Jump Candidates" that explore boundary nodes.
            
         2. COMMUNITY MERGING:
         - Review the 'AVAILABLE COMMUNITY IDs' and 'Struggling Communities' list above.

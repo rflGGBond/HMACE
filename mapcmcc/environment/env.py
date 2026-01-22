@@ -3,6 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 import heapq
 import networkx as nx
 import copy
+import math
 from typing import List, Dict, Any
 from collections import defaultdict
 
@@ -50,7 +51,7 @@ class PCMCCEnvironment:
         self.convergence_patience = 25  # Stop if no improvement for 5 generations
         
         # PCMCC Termination Logic Attributes
-        self.s_g = 3
+        self.s_g = 4
         self.theta = 0.01
         self.termination_beta = 2
         self.e_g_b = None # Generation when global evolution begins (1 community)
@@ -553,11 +554,11 @@ class PCMCCEnvironment:
                 
                 # Evaluate Offspring
                 effectS1 = evaluator.DPADVEvaluator.calculate_fitness(
-                    S1_new, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
+                    S1_new, self.G, self.sn_nodes, com_and_fs, self.hop
                 )
                 
                 effectSI = evaluator.DPADVEvaluator.calculate_fitness(
-                    SI_new, self.G, self.sn_nodes, com_and_fs, self.hop, node_gamma_map
+                    SI_new, self.G, self.sn_nodes, com_and_fs, self.hop
                 )
                 
                 # Update Population (Greedy Selection)
@@ -710,18 +711,30 @@ class PCMCCEnvironment:
                 if delta_t > 0:
                     imp_rate = delta_f / delta_t
             
-            # --- Danger Score Calculation ---
+            # --- Danger Score Calculation (Sigmoid Weighted Sum) ---
             # 1. Gamma (Clusteredness)
             gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
             
             # 2. Stagnation
             # Stagnation = max(0, 1 - Delta_i / (Delta_ref + epsilon))
-            # Delta_i = imp_rate (Average improvement in current window)
             epsilon = 1e-6
             stagnation_i = max(0.0, 1.0 - (imp_rate / (delta_ref + epsilon)))
             
-            # 3. Danger Score
-            danger_i = gamma_i * stagnation_i
+            # 3. Collapse (Diversity < Threshold)
+            div_th = 0.1
+            collapse_i = 1.0 if com.state.diversity_score < div_th else 0.0
+            
+            # 4. Boundary Risk
+            total_nodes = max(1, len(com.state.nodes))
+            boundary_risk_i = len(com.state.boundary_nodes) / total_nodes
+            
+            # 5. Final Danger Score
+            # Formula: sigma(a*gamma + b*stag + c*coll + d*risk - bias)
+            # Bias -2.0 shifts the range to align with 0.3/0.6 thresholds
+            a, b, c, d = 0.5, 1.5, 0.5, 0.5
+            bias = 2.0
+            logit = (a * gamma_i) + (b * stagnation_i) + (c * collapse_i) + (d * boundary_risk_i) - bias
+            danger_i = 1.0 / (1.0 + math.exp(-logit))
             
             summaries.append(CommunitySummary(
                 community_id=com_id,
@@ -765,9 +778,6 @@ class PCMCCEnvironment:
             # Use cached metrics
             N_prob = self.N_prob
             P_score = self.P_score
-            
-            # Need gamma map for local search and evaluation
-            node_gamma_map = self._get_node_gamma_map()
             
             # 2. Execute Evolutionary Step (Mutation -> Crossover -> Local Search)
             # A. Generate SI (Mutation)
