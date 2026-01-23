@@ -73,6 +73,9 @@ class PCMCCEnvironment:
         # Cache for expensive closeness calculations
         self.closeness_cache = defaultdict(lambda: defaultdict(float))
         self.closeness_cache_valid = False
+        
+        # New Flag for Emergency Trigger
+        self.was_in_critical_danger = False
 
     def set_merge_suggestions(self, suggestions: List[tuple]):
         """
@@ -474,6 +477,9 @@ class PCMCCEnvironment:
         """
         self.current_gen += 1
         
+        # Reset Emergency Flag for this step
+        self.was_in_critical_danger = False
+        
         # 0. Check and Execute Merges
         # A. Priority: Pending Agent Suggestions
         if self.pending_merge_suggestions:
@@ -498,6 +504,9 @@ class PCMCCEnvironment:
         for com_id, com in self.communities.items():
             danger = self._calculate_community_danger(com, delta_ref)
             if danger >= 0.6:
+                # MARK DANGER STATE
+                self.was_in_critical_danger = True
+                
                 # Check if Meta-Agent already set aggressive parameters
                 # Thresholds: Alpha >= 20.0, CR2 >= 0.8
                 is_aggressive = (com.state.alpha >= 20.0) and (com.state.cr2 >= 0.8)
@@ -510,6 +519,10 @@ class PCMCCEnvironment:
                     com.state.beta = 1.5
                     # Optionally set cr1 too if needed
                     com.state.cr1 = 0.8
+            
+            elif danger >= 0.3 and danger < 0.6:
+                pass
+                # Level 1 logic moved to Community Agent as per request
 
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
@@ -782,7 +795,8 @@ class PCMCCEnvironment:
             danger_i = self._calculate_community_danger(com, delta_ref)
 
             # Check for Critical Danger
-            if danger_i >= 0.6:
+            # If current danger is high OR danger was detected during step execution
+            if danger_i >= 0.6 or self.was_in_critical_danger:
                 emergency_meta_call = True
             
             summaries.append(CommunitySummary(

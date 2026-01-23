@@ -135,23 +135,23 @@ class CommunityAgent(BaseAgent):
                 action.parameters = step2_json.get("parameters")
                 
                 # --- Danger-based Parameter Correction (Rule-based Override) ---
-                if danger_score > 0 and action.parameters:
+                if danger_score >= 0.3 and danger_score < 0.6 and action.parameters:
                     # Constants
-                    CR2_MAX = 1.0
+                    CR2_MAX = 0.9
                     BETA_MIN = 1.0
-                    ALPHA_MAX = 30.0
+                    ALPHA_MAX = 25.0
                     
-                    # Scaling Factors (eta)
-                    ETA_1 = 0.5  # For cr2 (0-1 scale)
-                    ETA_2 = 5.0  # For beta (1-20 scale)
-                    ETA_3 = 10.0 # For alpha (1-30 scale)
+                    # Scaling Factors (eta) - Updated to new spec
+                    ETA_1 = 0.2  # For cr2 (0-1 scale)
+                    ETA_2 = 1.0  # For beta (1-20 scale)
+                    ETA_3 = 5.0  # For alpha (1-30 scale)
                     
                     # Original values
                     cr2 = float(action.parameters.get("cr2", 0.5))
                     beta = float(action.parameters.get("beta", 5.0))
                     alpha = float(action.parameters.get("alpha", 10.0))
                     
-                    # Apply Rules
+                    # Apply Rules (Level 1)
                     # cr2 <- min(cr2_max, cr2 + eta1 * Danger)
                     new_cr2 = min(CR2_MAX, cr2 + ETA_1 * danger_score)
                     
@@ -167,7 +167,7 @@ class CommunityAgent(BaseAgent):
                     action.parameters["alpha"] = round(new_alpha, 2)
                     
                     if danger_level > 0:
-                        print(f"Agent {self.agent_id}: Danger Correction Applied (Score: {danger_score:.2f})")
+                        print(f"Agent {self.agent_id}: Level 1 Danger Correction Applied (Score: {danger_score:.2f})")
                         print(f"  cr2: {cr2} -> {new_cr2:.2f} | beta: {beta} -> {new_beta:.2f} | alpha: {alpha} -> {new_alpha:.2f}")
 
             elif action_type == "propose_candidate":

@@ -49,6 +49,7 @@ class MetaObservation:
     community_summaries: List[CommunitySummary]
     merge_history: List[Any]
     parameter_history: List[Dict[str, Any]] = field(default_factory=list) # [{'params': {...}, 'global_score': float}]
+    emergency_meta_call: bool = False
 
 @dataclass
 class MetaAction:
