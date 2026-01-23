@@ -191,6 +191,24 @@ class Community:
         """
         Generates the observation dictionary for the Community Agent (LLM).
         """
+        import math
+        
+        # Dynamic Top-K Calculation
+        # Formula: Ki = clip([3ki], 10, [0.15ni])
+        n_i = len(self.state.nodes)
+        k_i = self.state.budget
+        
+        target = math.ceil(3 * k_i)
+        lower_bound = 10
+        upper_bound = math.ceil(0.15 * n_i)
+        
+        # Priority on upper bound (if community is small, don't exceed 15%)
+        dynamic_k = int(min(upper_bound, max(lower_bound, target)))
+        
+        # Safety for extremely small communities (e.g., < 7 nodes where 15% < 1)
+        if dynamic_k < 1 and n_i > 0:
+            dynamic_k = 1
+            
         return {
             "community_id": self.state.community_id,
             "current_generation": current_gen,
@@ -200,7 +218,7 @@ class Community:
             "dpadv_history": self.state.dpadv_history,
             "solution_history": self.state.solution_history,
             "diversity_score": self.state.diversity_score,
-            "top_k_score_nodes": self.state.top_k_score_nodes[:20], # Top 20
+            "top_k_score_nodes": self.state.top_k_score_nodes[:dynamic_k], # Dynamic K
             "current_seed_set": self.state.current_seed_set,
             "boundary_info": {
                 "neighbor_ids": self.state.neighbor_community_ids,

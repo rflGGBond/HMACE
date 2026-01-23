@@ -51,8 +51,8 @@ class PCMCCEnvironment:
         self.convergence_patience = 25  # Stop if no improvement for 5 generations
         
         # PCMCC Termination Logic Attributes
-        self.s_g = 4
-        self.theta = 0.01
+        self.s_g = 3
+        self.theta = 0.001
         self.termination_beta = 2
         self.e_g_b = None # Generation when global evolution begins (1 community)
         
@@ -68,6 +68,7 @@ class PCMCCEnvironment:
         
         # Merge suggestions pending execution
         self.pending_merge_suggestions: List[tuple] = []
+        self.merge_history: List[str] = []
         
         # Cache for expensive closeness calculations
         self.closeness_cache = defaultdict(lambda: defaultdict(float))
@@ -376,6 +377,7 @@ class PCMCCEnvironment:
                 
             # Execute
             print(f"  -> EXECUTING Merge: Group {group} (Gain: {gain:.4f}) -> New ID {next_id}")
+            self.merge_history.append(f"Gen {self.current_gen}: Merged {group} -> {next_id} (Gain: {gain:.2f})")
             
             # Mark IDs as merged
             for cid in group:
@@ -453,8 +455,8 @@ class PCMCCEnvironment:
             self.G, 
             com_nodes_map, 
             candidates, 
-            lambda_param=0.8, 
-            alpha_param=1.5
+            lambda_param=0.5, 
+            alpha_param=2.0
         )
         # merge_groups = merger.identify_merge_groups(self.G, com_nodes_map, candidates)
         
@@ -483,6 +485,31 @@ class PCMCCEnvironment:
         # B. Fallback: Heuristic Merging (Only if no Agent active)
         elif not agent_active:
              self._check_heuristic_merge()
+
+        # --- Hard Constraint: Enforce Action C for Critical Danger ---
+        # Calculate Delta Ref for Danger Score
+        T0 = 3
+        delta_ref = 1.0 
+        if len(self.global_dpadv_history) > T0:
+            avg_imp = (self.global_dpadv_history[0] - self.global_dpadv_history[T0]) / T0
+            if avg_imp > 1e-6:
+                delta_ref = avg_imp
+        
+        for com_id, com in self.communities.items():
+            danger = self._calculate_community_danger(com, delta_ref)
+            if danger >= 0.6:
+                # Check if Meta-Agent already set aggressive parameters
+                # Thresholds: Alpha >= 20.0, CR2 >= 0.8
+                is_aggressive = (com.state.alpha >= 20.0) and (com.state.cr2 >= 0.8)
+                
+                if not is_aggressive:
+                    print(f"System Enforcement: Meta-Agent failed to respond to danger signal. Forcibly executing 'Forced Perturbation' strategy for Community {com_id} (Danger: {danger:.2f} >= 0.6).")
+                    # Force Aggressive Parameters (Alpha=25, CR2=0.9, Beta=1.5)
+                    com.state.alpha = 25.0
+                    com.state.cr2 = 0.9
+                    com.state.beta = 1.5
+                    # Optionally set cr1 too if needed
+                    com.state.cr1 = 0.8
 
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
@@ -631,6 +658,44 @@ class PCMCCEnvironment:
             
             self.global_dpadv_history.append(self.global_best_dpadv)
 
+    def _calculate_community_danger(self, com: Community, delta_ref: float) -> float:
+        """
+        Calculates the Danger Score for a single community.
+        Danger = Sigmoid(a*Gamma + b*Stagnation + c*Collapse + d*Risk - Bias)
+        """
+        # 1. Gamma (Clusteredness)
+        gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
+        
+        # 2. Stagnation
+        # Stagnation = max(0, 1 - Delta_i / (Delta_ref + epsilon))
+        imp_rate = 0.0
+        history = com.state.dpadv_history
+        if len(history) >= 2:
+            delta_f = history[0] - history[-1]
+            delta_t = len(history) - 1
+            if delta_t > 0:
+                imp_rate = delta_f / delta_t
+                
+        epsilon = 1e-6
+        stagnation_i = max(0.0, 1.0 - (imp_rate / (delta_ref + epsilon)))
+        
+        # 3. Collapse (Diversity < Threshold)
+        div_th = 0.1
+        collapse_i = 1.0 if com.state.diversity_score < div_th else 0.0
+        
+        # 4. Boundary Risk
+        total_nodes = max(1, len(com.state.nodes))
+        boundary_risk_i = len(com.state.boundary_nodes) / total_nodes
+        
+        # 5. Final Danger Score
+        a, b, c, d = 1.0, 1.0, 0.5, 0.5
+        bias = 2.0
+        logit = (a * gamma_i) + (b * stagnation_i) + (c * collapse_i) + (d * boundary_risk_i) - bias
+        danger_i = 1.0 / (1.0 + math.exp(-logit))
+        
+        return danger_i
+
+
     def get_global_observation(self):
         """
         Aggregates state to form MetaObservation.
@@ -692,6 +757,8 @@ class PCMCCEnvironment:
                 delta_ref = avg_imp
         
         summaries = []
+        emergency_meta_call = False # Flag for emergency intervention
+
         for com_id, com in self.communities.items():
             # Get calculated closeness
             closeness = dict(closeness_map[com_id])
@@ -711,30 +778,12 @@ class PCMCCEnvironment:
                 if delta_t > 0:
                     imp_rate = delta_f / delta_t
             
-            # --- Danger Score Calculation (Sigmoid Weighted Sum) ---
-            # 1. Gamma (Clusteredness)
-            gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
-            
-            # 2. Stagnation
-            # Stagnation = max(0, 1 - Delta_i / (Delta_ref + epsilon))
-            epsilon = 1e-6
-            stagnation_i = max(0.0, 1.0 - (imp_rate / (delta_ref + epsilon)))
-            
-            # 3. Collapse (Diversity < Threshold)
-            div_th = 0.1
-            collapse_i = 1.0 if com.state.diversity_score < div_th else 0.0
-            
-            # 4. Boundary Risk
-            total_nodes = max(1, len(com.state.nodes))
-            boundary_risk_i = len(com.state.boundary_nodes) / total_nodes
-            
-            # 5. Final Danger Score
-            # Formula: sigma(a*gamma + b*stag + c*coll + d*risk - bias)
-            # Bias -2.0 shifts the range to align with 0.3/0.6 thresholds
-            a, b, c, d = 0.5, 1.5, 0.5, 0.5
-            bias = 2.0
-            logit = (a * gamma_i) + (b * stagnation_i) + (c * collapse_i) + (d * boundary_risk_i) - bias
-            danger_i = 1.0 / (1.0 + math.exp(-logit))
+            # --- Danger Score Calculation ---
+            danger_i = self._calculate_community_danger(com, delta_ref)
+
+            # Check for Critical Danger
+            if danger_i >= 0.6:
+                emergency_meta_call = True
             
             summaries.append(CommunitySummary(
                 community_id=com_id,
@@ -752,8 +801,9 @@ class PCMCCEnvironment:
             current_global_dpadv=self.global_best_dpadv,
             global_dpadv_history=self.global_dpadv_history,
             community_summaries=summaries,
-            merge_history=[], # TODO: maintain merge history
-            parameter_history=self.parameter_history
+            merge_history=self.merge_history,
+            parameter_history=self.parameter_history,
+            emergency_meta_call=emergency_meta_call # Pass the flag
         )
 
     def apply_community_action(self, community_id: int, action: CommunityAction):

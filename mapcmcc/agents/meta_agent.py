@@ -72,7 +72,7 @@ class MetaAgent(BaseAgent):
                  history_str += f"{{ {entry['params']} }} -> {entry['global_score']}\n"
         else:
              # Default Fallback
-             history_str += "{ 'cr1': 0.4, 'cr2': 0.4, 'beta': 2.0, 'alpha': 12.0 } -> N/A\n"
+             history_str += "{ 'cr1': 0.3, 'cr2': 0.3, 'beta': 2.0, 'alpha': 12.0 } -> N/A\n"
              
         # Format Merge History
         if "merge_history" in obs_dict and obs_dict["merge_history"]:
@@ -187,6 +187,13 @@ class MetaAgent(BaseAgent):
             
             # --- Hybrid Merge Strategy: Filter by Heuristic Score (from merger.py logic) ---
             raw_suggestions = response_json.get("merge_suggestions", [])
+            
+            # HARD ENFORCEMENT: No merges if only 1 community exists
+            if num_communities < 2:
+                if raw_suggestions:
+                    print(f"Meta-Agent Enforcement: Merges disabled for single community. Ignored suggestions: {raw_suggestions}")
+                raw_suggestions = []
+
             valid_suggestions = []
             
             # Build a lookup for community summaries to access closeness info

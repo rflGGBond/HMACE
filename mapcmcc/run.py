@@ -199,9 +199,16 @@ def main():
                             llm_client=llm_client
                         )
                     
-                    # 2. Agent Interaction (Every T_comm generations)
-                    if gen % T_COMM == 0:
-                        print("\n>>> Triggering Multi-Agent Interaction")
+                    # 2. Agent Interaction (Every T_comm generations OR Emergency)
+                    # Get Global Observation to check for emergency
+                    global_obs = env.get_global_observation()
+                    emergency_trigger = global_obs.emergency_meta_call
+
+                    if gen % T_COMM == 0 or emergency_trigger:
+                        if emergency_trigger:
+                            print(f"\n>>> EMERGENCY TRIGGERED: Critical Danger Detected! Invoking Agents immediately.")
+                        else:
+                            print("\n>>> Triggering Multi-Agent Interaction")
                         
                         # A. Community Agents
                         for com_id, agent in community_agents.items():
@@ -222,7 +229,11 @@ def main():
                             
                         # B. Meta Agent
                         if meta_agent:
-                            # Get Real Global Observation
+                            # Use the already fetched observation (or re-fetch if needed, but safe to reuse)
+                            # Actually, community actions might have changed state, so re-fetch is safer for consistency
+                            # but computationally expensive. 
+                            # However, Meta-Agent needs accurate info. Let's re-fetch briefly or just use current.
+                            # For consistency with original logic, let's re-fetch.
                             obs = env.get_global_observation()
                             
                             meta_action = meta_agent.get_action(obs)

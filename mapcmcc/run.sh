@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration Parameters
-GRAPHS="BA3000"
+GRAPHS="email-Eu-core"
 TOTAL_BUDGET="20 110 200"
 NUM_COMMUNITIES=16
 MAX_GEN=20

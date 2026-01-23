@@ -190,25 +190,29 @@ class CommunityAgent(BaseAgent):
                          boundary_context = f"Available BOUNDARY NODES (Key for breaking closed structures): {b_nodes}"
 
                 step2_system_prompt = f"""
-                Description of problem and solution properties
-                You are given a list of top potential nodes with scores: {observation.top_k_score_nodes}. Your task is to find a seed set of size {observation.budget}, with the lowest possible DPADV score (blocking influence), that minimizes the negative influence.
-                
+                ### Role & Objective
+                You are an expert Evolutionary Strategy Agent. Your goal is to select a seed set of size {observation.budget} to MINIMIZE the DPADV score (blocking negative influence).
+
+                ### Context Data
+                1. **High Potential Candidates**: {observation.top_k_score_nodes} (Nodes with high local centrality).
+                2. **System Status**:
                 {danger_context}
                 {boundary_context}
 
-                In-context examples (population)
-                Below are some previous seed sets and their DPADV scores. The sets are arranged in descending order based on their scores, where lower values are better.
-                
+                ### Historical Knowledge (Population)
+                Past seed sets and their scores (lower is better):
                 {history_str}
 
-                Task instructions
-                Please follow the instruction step-by-step to generate a new seed set:
-                1. Analyze the historical successful seed sets (In-context examples) to identify effective blocking nodes.
-                2. Select high-potential nodes from the provided {observation.top_k_score_nodes} list.
-                3. Synthesize these insights to construct a single, superior seed set of size {observation.budget}.
-                4. Ensure the set is diverse and strategically positioned to minimize DPADV.
-                
-                Directly give me the final generated seed set in JSON format: {{ "candidate_seed_set": [id1, id2, ...] }}
+                ### Strategic Instructions
+                1. **Analyze Patterns**: Identify effective blocking nodes from the historical successful sets.
+                2. **Check Danger Signal**:
+                   - If **CRITICAL DANGER** or **STAGNATION** is detected: You MUST prioritize **Boundary Nodes** (from the list above) to break local optima. Do not rely solely on the Top-K list.
+                   - If **Normal**: Focus on refining the high-performing nodes from the Top-K list: {observation.top_k_score_nodes}.
+                3. **Selection**: Construct a single, superior seed set of size {observation.budget}. Mix high-scoring nodes (Exploitation) with boundary nodes (Exploration) if needed.
+
+                ### Output Requirement
+                Return ONLY the JSON object:
+                {{ "candidate_seed_set": [id1, id2, ...] }}
                 """
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate candidate seed set. Respond with valid JSON."
                 
@@ -221,6 +225,23 @@ class CommunityAgent(BaseAgent):
                     if len(candidates) > observation.budget:
                         print(f"Truncating candidate set from {len(candidates)} to {observation.budget}")
                         candidates = candidates[:observation.budget]
+                    
+                    # --- Conditional Boundary Injection Enforcement ---
+                    # If Danger >= 1 AND Boundary Nodes available AND LLM missed them
+                    boundary_nodes = obs_dict.get("boundary_info", {}).get("boundary_nodes", [])
+                    if danger_level >= 1 and boundary_nodes and candidates:
+                        has_boundary = any(node in boundary_nodes for node in candidates)
+                        if not has_boundary:
+                            import random
+                            # Force Injection
+                            # Pick a boundary node (random for now, could use scores if available)
+                            forced_node = random.choice(boundary_nodes)
+                            # Pick a replacement index
+                            replace_idx = random.randint(0, len(candidates) - 1)
+                            
+                            print(f"Agent {self.agent_id}: Boundary Injection Enforced (LLM missed it). Replaced {candidates[replace_idx]} with {forced_node}.")
+                            candidates[replace_idx] = forced_node
+                            
                     action.candidate_seed_set = candidates
                 else:
                      action.candidate_seed_set = candidates
