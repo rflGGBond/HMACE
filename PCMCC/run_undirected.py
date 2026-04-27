@@ -34,9 +34,12 @@ class Logger(object):
         self.terminal.write(message)
         if self.log:
             self.log.write(message)
+            self.log.flush()
 
     def flush(self):
-        pass
+        self.terminal.flush()
+        if self.log:
+            self.log.flush()
 
 
 def communityDivision_1(G_1, C_1):
@@ -1201,7 +1204,8 @@ if __name__ == "__main__":
 
     for file_name in graphs:
         # --- Setup Logging per Graph ---
-        log_dir = f"../results/logs/PCMCC/repeats_{args.repeats}_runs{args.mc_runs}"
+        # log_dir = f"../results/logs/PCMCC/repeats_{args.repeats}_runs{args.mc_runs}"
+        log_dir = f"../results/logs/PCMCC2/"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_name = f"log_{timestamp}_PCMCC_undirected_{file_name}.log"
@@ -1678,7 +1682,8 @@ if __name__ == "__main__":
 
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../results/COICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_coicm = f"../results/COICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../results/COICM/PCMCC2"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -1702,7 +1707,8 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_mcicm = f"../results/MCICM/PCMCC/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../results/MCICM/PCMCC2S"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

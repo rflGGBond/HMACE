@@ -1,5 +1,3 @@
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 import heapq
 import networkx as nx
 import copy
@@ -13,12 +11,18 @@ from ..utils.types import CommunityAction, MetaAction, MetaObservation, Communit
 import random
 
 class PCMCCEnvironment:
-    def __init__(self, graph_path: str, sn_nodes: List[int], total_budget: int, num_communities: int, is_directed: bool = False):
+    def __init__(self, graph_path: str, sn_nodes: List[int], total_budget: int, num_communities: int, is_directed: bool = False, tau_1: float = 0.3, tau_2: float = 0.6, merge_alpha: float = 1.5, merge_lambda: float = 0.8, disable_ter: bool = False, disable_ds: bool = False):
         self.graph_path = graph_path
         self.sn_nodes = sn_nodes
         self.total_budget = total_budget
         self.initial_num_communities = num_communities
         self.is_directed = is_directed
+        self.tau_1 = tau_1
+        self.tau_2 = tau_2
+        self.merge_alpha = merge_alpha
+        self.merge_lambda = merge_lambda
+        self.disable_ter = disable_ter
+        self.disable_ds = disable_ds
         self.hop = 2 # Default hop count
         self.Ni = 20 # Subpopulation size (Number of individuals per island)
         self.initial_alpha = 12.0 # Default search space reduction factor
@@ -53,18 +57,9 @@ class PCMCCEnvironment:
         # PCMCC Termination Logic Attributes
         self.s_g = 3
         self.theta = 0.001
+        self.mu = 0.5
         self.termination_beta = 2
         self.e_g_b = None # Generation when global evolution begins (1 community)
-        
-        # Parallel Execution Context
-        self.manager = multiprocessing.Manager()
-        # Legacy lists - commented out to prevent index errors with dynamic community merging
-        # self.shared_islands = self.manager.list()
-        # self.shared_islands_effect = self.manager.list()
-        # self.locks = self.manager.list()
-        # self.begin_flag = self.manager.list([0])
-        # self.max_community_end_flags = self.manager.list()
-        # self.com_gen_acc = self.manager.list([0] * num_communities)
         
         # Merge suggestions pending execution
         self.pending_merge_suggestions: List[tuple] = []
@@ -263,14 +258,17 @@ class PCMCCEnvironment:
                             self.Gs, 
                             com_nodes_map[c1], 
                             com_nodes_map[c2],
-                            lambda_param=0.8,
-                            alpha_param=1.5
+                            lambda_param=self.merge_lambda,
+                            alpha_param=self.merge_alpha
                         )
                         merge_score_sum += score
                 
                 if merge_score_sum <= 0:
-                    print(f"  -> REJECTED Group {valid_group}: Gamma Merge Score <= 0 ({merge_score_sum:.4f})")
-                    continue
+                    if getattr(self, 'disable_ter', False):
+                        print(f"  -> ACCEPTED Group {valid_group} despite Gamma Merge Score <= 0 ({merge_score_sum:.4f}) due to disable_ter.")
+                    else:
+                        print(f"  -> REJECTED Group {valid_group}: Gamma Merge Score <= 0 ({merge_score_sum:.4f})")
+                        continue
 
                 # --- Filter 1: Closeness Check ---
                 # closeness_sum = 0
@@ -348,7 +346,9 @@ class PCMCCEnvironment:
                 # print(f"  -> Evaluation: Group {valid_group} | Closeness: {closeness_sum:.2f} | Baseline: {weighted_baseline_score:.4f} | New: {new_score:.4f} | Gain: {gain:.4f}")
                 
                 # --- Filter 2: Gain Check ---
-                if gain > 0:
+                if getattr(self, 'disable_ter', False) or gain > 0:
+                    if getattr(self, 'disable_ter', False) and gain <= 0:
+                        print(f"  -> ACCEPTED: Gain <= 0 ({gain:.4f}) due to disable_ter")
                     evaluated_suggestions.append((gain, valid_group, new_com))
                 else:
                     print(f"  -> REJECTED: Gain <= 0")
@@ -411,7 +411,7 @@ class PCMCCEnvironment:
         Implements the original PCMCC heuristic merging logic.
         Checks for stagnation and merges communities if they don't improve fast enough.
         """
-        theta = 1.0
+        theta = self.theta
         s_l = 3
         k = self.total_budget
         
@@ -431,9 +431,13 @@ class PCMCCEnvironment:
             deltaF = benchmark_dpadv - current_dpadv
             deltaT = self.current_gen - com.state.benchmark_gen
             
-            threshold = theta * deltaT * com.state.budget / k
+            # Calculate Gamma
+            gamma_i = gamma_merger.calculate_gamma(self.G, com.state.nodes)
             
-            # PCMCC Logic:
+            # PCMCC Logic with Dynamic Threshold:
+            # Theta' = Theta * (ki/k) * (1 + mu * gamma)
+            threshold = theta * (com.state.budget / k) * (1 + self.mu * gamma_i) * deltaT
+            
             # if (deltaF <= threshold) and (deltaT >= s_l): merge
             # elif deltaF > threshold: update benchmark
             
@@ -458,8 +462,8 @@ class PCMCCEnvironment:
             self.G, 
             com_nodes_map, 
             candidates, 
-            lambda_param=0.5, 
-            alpha_param=2.0
+            lambda_param=self.merge_lambda, 
+            alpha_param=self.merge_alpha
         )
         # merge_groups = merger.identify_merge_groups(self.G, com_nodes_map, candidates)
         
@@ -503,7 +507,7 @@ class PCMCCEnvironment:
         
         for com_id, com in self.communities.items():
             danger = self._calculate_community_danger(com, delta_ref)
-            if danger >= 0.6:
+            if danger >= self.tau_2:
                 # MARK DANGER STATE
                 self.was_in_critical_danger = True
                 
@@ -512,7 +516,7 @@ class PCMCCEnvironment:
                 is_aggressive = (com.state.alpha >= 20.0) and (com.state.cr2 >= 0.8)
                 
                 if not is_aggressive:
-                    print(f"System Enforcement: Meta-Agent failed to respond to danger signal. Forcibly executing 'Forced Perturbation' strategy for Community {com_id} (Danger: {danger:.2f} >= 0.6).")
+                    print(f"System Enforcement: Meta-Agent failed to respond to danger signal. Forcibly executing 'Forced Perturbation' strategy for Community {com_id} (Danger: {danger:.2f} >= {self.tau_2}).")
                     # Force Aggressive Parameters (Alpha=25, CR2=0.9, Beta=1.5)
                     com.state.alpha = 25.0
                     com.state.cr2 = 0.9
@@ -520,7 +524,7 @@ class PCMCCEnvironment:
                     # Optionally set cr1 too if needed
                     com.state.cr1 = 0.8
             
-            elif danger >= 0.3 and danger < 0.6:
+            elif danger >= self.tau_1 and danger < self.tau_2:
                 pass
                 # Level 1 logic moved to Community Agent as per request
 
@@ -676,6 +680,9 @@ class PCMCCEnvironment:
         Calculates the Danger Score for a single community.
         Danger = Sigmoid(a*Gamma + b*Stagnation + c*Collapse + d*Risk - Bias)
         """
+        if getattr(self, 'disable_ds', False):
+            return 0.0
+            
         # 1. Gamma (Clusteredness)
         gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
         
@@ -793,10 +800,13 @@ class PCMCCEnvironment:
             
             # --- Danger Score Calculation ---
             danger_i = self._calculate_community_danger(com, delta_ref)
+            
+            # Recalculate Gamma for observation
+            gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
 
             # Check for Critical Danger
             # If current danger is high OR danger was detected during step execution
-            if danger_i >= 0.6 or self.was_in_critical_danger:
+            if danger_i >= self.tau_2 or self.was_in_critical_danger:
                 emergency_meta_call = True
             
             summaries.append(CommunitySummary(
@@ -807,7 +817,8 @@ class PCMCCEnvironment:
                 diversity=com.state.diversity_score,
                 boundary_risk=len(com.state.boundary_nodes) / max(1, len(com.state.nodes)),
                 closeness_info=closeness,
-                danger_score=danger_i
+                danger_score=danger_i,
+                gamma=gamma_i
             ))
             
         return MetaObservation(
@@ -920,8 +931,11 @@ class PCMCCEnvironment:
             # )
             
             # Compare with current global best
-            if new_global_dpadv < self.global_best_dpadv:
-                print(f"Agent {community_id} found BETTER global solution (DPADV: {self.global_best_dpadv} -> {new_global_dpadv}). Accepted.")
+            if getattr(self, 'disable_ter', False) or new_global_dpadv < self.global_best_dpadv:
+                if getattr(self, 'disable_ter', False):
+                    print(f"Agent {community_id} candidate blindly ACCEPTED due to disable_ter (DPADV: {self.global_best_dpadv} -> {new_global_dpadv}).")
+                else:
+                    print(f"Agent {community_id} found BETTER global solution (DPADV: {self.global_best_dpadv} -> {new_global_dpadv}). Accepted.")
                 # Accept: Update Community Best & Global Best
                 com.update_best_solution(action.candidate_seed_set, new_global_dpadv) # Note: Local DPADV is approximation here
                 self.global_best_dpadv = new_global_dpadv
@@ -1066,8 +1080,11 @@ class PCMCCEnvironment:
             )
             
             # Compare with Current Global Best
-            if sim_global_dpadv < self.global_best_dpadv:
-                 print(f"  -> Global Simulation Successful! New Baselines improved Global DPADV ({self.global_best_dpadv:.4f} -> {sim_global_dpadv:.4f}). Accepted.")
+            if getattr(self, 'disable_ter', False) or sim_global_dpadv < self.global_best_dpadv:
+                 if getattr(self, 'disable_ter', False):
+                     print(f"  -> Global Simulation Accepted blindly due to disable_ter (DPADV: {self.global_best_dpadv:.4f} -> {sim_global_dpadv:.4f}).")
+                 else:
+                     print(f"  -> Global Simulation Successful! New Baselines improved Global DPADV ({self.global_best_dpadv:.4f} -> {sim_global_dpadv:.4f}). Accepted.")
                  
                  # 1. Apply Parameters
                  for com in self.communities.values():

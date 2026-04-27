@@ -2,9 +2,16 @@ import json
 import os
 from typing import Dict, Any, Optional
 import warnings
+import logging
 import openai
 import torch
 import ast
+
+# Completely suppress Hugging Face transformers warnings
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 # # Try to import torch and transformers for local model support
@@ -19,11 +26,13 @@ class LLMClient:
     A simple client to interact with an LLM provider (e.g., OpenAI, Anthropic, or Local).
     Supports local models deployed in a specific directory.
     """
-    def __init__(self, provider: str = "local", api_key: Optional[str] = None, model: str = "Qwen2.5-14B", model_root: str = "../../../models"):
+    def __init__(self, provider: str = "local", api_key: Optional[str] = None, model: str = "Qwen2.5-14B", model_root: str = "../../../models", base_url: Optional[str] = None):
+        
         self.provider = provider
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.model_root = model_root
+        self.base_url = base_url
         
         self.pipeline = None
         
@@ -44,9 +53,14 @@ class LLMClient:
         try:
             # Use device_map="auto" to handle large models if accelerate is installed
             self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            
+            # Ensure pad_token is set
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                
             self.model_obj = AutoModelForCausalLM.from_pretrained(
                 model_path, 
-                device_map="auto", 
+                device_map="balanced_low_0", 
                 dtype="auto", 
                 trust_remote_code=True
             )
@@ -60,7 +74,8 @@ class LLMClient:
             self.pipeline = pipeline(
                 "text-generation",
                 model=self.model_obj,
-                tokenizer=self.tokenizer
+                tokenizer=self.tokenizer,
+                device_map="balanced_low_0" # Ensure pipeline handles devices correctly
             )
             print("Local model loaded successfully.")
         except Exception as e:
@@ -83,9 +98,9 @@ class LLMClient:
             try:
                 import openai
             except ImportError:
-                raise ImportError("OpenAI provider requires 'openai' package. Please install it.")
+                raise ImportError("Import openai Error.")
 
-            client = openai.OpenAI(api_key=self.api_key, base_url="https://api.gptsapi.net/v1")
+            client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
             
             # Prepare messages
             messages = [
@@ -155,11 +170,8 @@ class LLMClient:
                     return temp_text
                 except:
                     pass
-        
         if start != -1 and end != -1:
             extracted_text = text[start:end+1]
-            
-            # 1. Try standard JSON load
             try:
                 json.loads(extracted_text)
                 return extracted_text
@@ -172,12 +184,10 @@ class LLMClient:
                         return truncated_text
                     except:
                         pass
+                
                 # Handle comments (//) which strict JSON doesn't allow
-                # Simple regex to remove // comments
                 try:
                     import re
-                    # Remove // comments but be careful about URLs (http://)
-                    # Pattern: match // not preceded by :
                     no_comments = re.sub(r'(?<!:)\/\/.*', '', extracted_text)
                     json.loads(no_comments)
                     return no_comments
@@ -201,11 +211,27 @@ class LLMClient:
             except json.JSONDecodeError:
                 pass
                 
-            # If all parsing attempts fail, raise ValueError instead of returning invalid string
-            raise ValueError(f"Failed to parse JSON from extracted text: {extracted_text[:100]}...")
-            
-        # If no JSON object found, raise ValueError to be caught by caller
-        raise ValueError(f"No JSON object found in LLM response: {original_text[:100]}...")
+        # 4. Aggressive truncation fix for arrays (e.g. [1, 2, 3...)
+        if start != -1:
+            raw_text = text[start:]
+            # If it's missing closing braces/brackets, let's try to forcefully close them
+            # Very common in LLMs: "candidate_seed_set": [226, 27, 262...
+            if raw_text.count("[") > raw_text.count("]"):
+                # Cut off at the last comma to remove incomplete numbers
+                last_comma = raw_text.rfind(",")
+                if last_comma != -1:
+                    raw_text = raw_text[:last_comma]
+                raw_text += "]}"
+            elif raw_text.count("{") > raw_text.count("}"):
+                raw_text += "}"
+                
+            try:
+                json.loads(raw_text)
+                return raw_text
+            except:
+                pass
+
+        raise ValueError(f"Failed to parse JSON from extracted text: {text[:100]}...")
 
 
     def _local_response(self, system_prompt: str, user_prompt: str, response_format: str, temperature: float) -> str:
@@ -234,12 +260,15 @@ class LLMClient:
 
         # Generation parameters
         gen_kwargs = {
-            "max_new_tokens": 2048,
+            "max_new_tokens": 1024, # Limit token generation to avoid infinite loops and truncation
             "do_sample": True,
             "temperature": temperature,
             "top_p": 0.9,
             "repetition_penalty": 1.1,
             "return_full_text": False,
+            "pad_token_id": self.tokenizer.eos_token_id, # Fix CUDA device-side assert when pad token is missing
+            "batch_size": 1, # Avoid multi-pipeline issue on GPU
+            "max_length": None # Explicitly override default max_length to avoid conflict with max_new_tokens
         }
         
         outputs = self.pipeline(prompt, **gen_kwargs)
@@ -249,12 +278,24 @@ class LLMClient:
         # Since return_full_text=False, generated_text is just the new content.
         response = generated_text.strip()
 
-        # If JSON is requested, try to ensure valid JSON (basic check)
+        # Try to use the shared JSON cleaner if response_format is JSON
         if response_format == "json":
-            # Just return it, the prompt should have instructed JSON output. 
-            # We could add a validator here if needed.
-            pass
-            
+            response = self._clean_and_extract_json(response)
+        
+        # Fallback Aggressive JSON truncation recovery if cleaner fails or wasn't used
+        # Find the first '{' and the last '}'
+        start_idx = response.find('{')
+        end_idx = response.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            response = response[start_idx:end_idx+1]
+        
+        # Sometimes arrays get truncated like [1, 2, 3
+        if response.count('[') > response.count(']'):
+            response += ']'
+        # Sometimes objects get truncated
+        if response.count('{') > response.count('}'):
+            response += '}'
+
         return response
 
     def _mock_response(self, system_prompt: str, user_prompt: str) -> str:

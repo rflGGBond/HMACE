@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Default parameters
-K_VALUES="20 110 200"
+K_VALUES="110"
 REPEATS=10
 MC_RUNS=10000
 
@@ -13,11 +13,11 @@ UNDIRECTED_GRAPHS=""
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS BA3000"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS ER3000"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS RG3000"
-# UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS WS3000"
+UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS WS3000"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS as-caida"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS arenas-email"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS slavko"
-UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS ego-facebook"
+# UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS ego-facebook"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS deezer_europe"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS fb-pages-tvshow"
 # UNDIRECTED_GRAPHS="$UNDIRECTED_GRAPHS soc-hamsterster"
@@ -47,17 +47,17 @@ if [ -n "$UNDIRECTED_GRAPHS" ]; then
     # echo "Running CMIA-H Baseline..."
     # python3 cmia_h_gpu.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # IBMM
-    echo "Running IBMM Baseline..."
-    python3 ibmm.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # # IBMM
+    # echo "Running IBMM Baseline..."
+    # python3 ibmm.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # # CELF
     # echo "Running CELF Baseline..."
     # python3 celf.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
-    # # DDSE
-    # echo "Running DDSE Baseline..."
-    # python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
+    # DDSE
+    echo "Running DDSE Baseline..."
+    python3 ddse.py --k $K_VALUES --repeats $REPEATS --graphs $UNDIRECTED_GRAPHS --mc_runs $MC_RUNS
 
     # # SEA-PEA
     # echo "Running SEA-PEA Baseline..."

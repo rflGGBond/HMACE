@@ -8,23 +8,28 @@ class MetaAgent(BaseAgent):
     """
     Agent controlling the global parameters and merges.
     """
-    def __init__(self, llm_client: LLMClient = None):
+    def __init__(self, llm_client: LLMClient = None, tau_1: float = 0.3, tau_2: float = 0.6):
         self.llm_client = llm_client or LLMClient()  # Default to mock if not provided
+        self.tau_1 = tau_1
+        self.tau_2 = tau_2
 
     def get_action(self, observation: MetaObservation) -> MetaAction:
         # 1. Prepare Prompt
         obs_dict = dataclasses.asdict(observation)
         
         # --- Pre-processing: Identify Struggling Communities (Theta Logic) ---
-        # Theta Threshold Logic: Rate < theta * (ki / k)
+        # Theta Threshold Logic: Rate < theta * (ki / k) * (1 + mu * gamma)
         # We'll calculate this and inject it into the prompt to guide the LLM.
-        theta = 1.0 # Global parameter, could be made adjustable
+        theta = 0.001 # Global parameter, aligning with Environment default
+        mu = 0.5
         total_budget = sum(s.budget for s in observation.community_summaries)
         struggling_communities = []
         
         if total_budget > 0:
             for s in observation.community_summaries:
-                target_rate = theta * (s.budget / total_budget)
+                gamma_val = getattr(s, 'gamma', 0.0)
+                target_rate = theta * (s.budget / total_budget) * (1 + mu * gamma_val)
+                
                 if s.improvement_rate <= target_rate:
                     struggling_communities.append(s.community_id)
         
@@ -36,9 +41,9 @@ class MetaAgent(BaseAgent):
         critical_danger_communities = []
         for s in observation.community_summaries:
             d_score = getattr(s, 'danger_score', 0.0) # Safety getattr
-            if d_score >= 0.6:
+            if d_score >= self.tau_2:
                 critical_danger_communities.append(f"{s.community_id} (Score: {d_score:.2f})")
-            elif d_score >= 0.3:
+            elif d_score >= self.tau_1:
                 danger_communities.append(f"{s.community_id} (Score: {d_score:.2f})")
         
         danger_info_str = ""

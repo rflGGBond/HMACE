@@ -19,7 +19,7 @@ except ImportError:
 
 class Logger(object):
     def __init__(self, stream=sys.stdout):
-        output_dir = "../../results/logs/DDSE/repeats10_runs10000" 
+        output_dir = "../../results/logs/convergence" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -32,9 +32,11 @@ class Logger(object):
     def write(self, message):
         self.terminal.write(message)
         self.log.write(message)
+        self.log.flush()
 
     def flush(self):
-        pass
+        self.terminal.flush()
+        self.log.flush()
 
 def run_diffusion_model(G, S_P, S_N, model='COICM'):
     """
@@ -170,7 +172,7 @@ def fitness_dpadv(seed, G, SN, relevant_nodes, hop=3):
     touched_nodes = set(apN_fc.keys())
     # Intersect with relevant_nodes if needed, but relevant_nodes usually is V.
     
-    for u in touched_nodes:
+    for u in relevant_nodes:
         # Check if u is relevant (e.g., not in SN if we exclude source?)
         # But SN itself is activated.
         effect_fc += apN_fc[u, hop]
@@ -298,6 +300,14 @@ def ddse(G, k, SN, n_pop=20, g_max=10, mutation_prob=0.3, crossover_prob=0.5):
                 
         population = new_population
         
+        # Calculate best DPADV in current generation for convergence analysis
+        best_fit_in_gen = float('inf')
+        for ind in population:
+            fit = fitness_dpadv(set(ind), G, SN, relevant_nodes, hop)
+            if fit < best_fit_in_gen:
+                best_fit_in_gen = fit
+        print(f"    Best DPADV in Gen {g+1}: {best_fit_in_gen:.4f}")
+        
     # Final Selection
     best_ind = None
     best_fit = float('inf')
@@ -415,7 +425,7 @@ if __name__ == "__main__":
 
         # Plot COICM
         try:
-            output_fig_dir_coicm = f"../../results/COICM/DDSE/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../../results/COICM/convergence/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -436,7 +446,7 @@ if __name__ == "__main__":
 
         # Plot MCICM
         try:
-            output_fig_dir_mcicm = f"../../results/MCICM/DDSE/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../../results/MCICM/convergence/repeats{args.repeats}_runs{args.mc_runs}"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             

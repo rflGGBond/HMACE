@@ -20,6 +20,10 @@ import random
 import numpy as np
 import torch
 
+# torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.enable = True
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 class LoggerWriter:
     """
     A simple class to redirect stdout to both terminal and a log file.
@@ -51,6 +55,10 @@ def main():
     parser.add_argument("--num_communities", type=int, default=16, help="Number of communities")
     parser.add_argument("--max_gen", type=int, default=20, help="Maximum number of generations")
     parser.add_argument("--t_comm", type=int, default=5, help="Communication interval")
+    parser.add_argument("--tau_1", type=float, default=0.3, help="Danger threshold level 1")
+    parser.add_argument("--tau_2", type=float, default=0.6, help="Danger threshold level 2")
+    parser.add_argument("--merge_alpha", type=float, default=1.5, help="Alpha parameter for merge score")
+    parser.add_argument("--merge_lambda", type=float, default=0.8, help="Lambda parameter for merge score")
     parser.add_argument("--mc_runs", type=int, default=10000, help="Number of Monte Carlo runs for evaluation")
     parser.add_argument("--repeats", type=int, default=5, help="Number of repeats for each experiment")
     
@@ -58,7 +66,14 @@ def main():
     parser.add_argument("--llm_provider", type=str, default="local", choices=["mock", "local", "openai"], help="LLM Provider")
     parser.add_argument("--llm_model", type=str, default="qwen3-max", help="Model name (or path for local)")
     parser.add_argument("--api_key", type=str, default=None, help="API Key for OpenAI")
+    parser.add_argument("--base_url", type=str, default=None, help="Base URL for OpenAI API (e.g., OpenRouter URL)")
     parser.add_argument("--model_root", type=str, default="../../models", help="Root directory for local models")
+
+    # Ablation Study Arguments
+    parser.add_argument("--disable_ca", action="store_true", help="Disable Community Agent")
+    parser.add_argument("--disable_ma", action="store_true", help="Disable Meta Agent")
+    parser.add_argument("--disable_ter", action="store_true", help="Disable Try-Evaluate-Revert (accept all proposals)")
+    parser.add_argument("--disable_ds", action="store_true", help="Disable Danger Sensing (and forced perturbation)")
 
     args = parser.parse_args()
     
@@ -67,7 +82,7 @@ def main():
     np.random.seed(42)
 
     # --- Setup Logging ---
-    log_dir = f"../results/logs/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+    log_dir = f"../results/logs/sensitivity/"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
@@ -83,18 +98,29 @@ def main():
     T_COMM = args.t_comm # Communication interval
     
     # Initialize LLM Client
-    print(f"Initializing LLM Client ({args.llm_provider} - {args.llm_model})...")
+    print(f"Initializing LLM Client ({args.llm_model})...")
     llm_client = LLMClient(
         provider=args.llm_provider,
         model=args.llm_model,
         api_key=args.api_key,
+        base_url=args.base_url,
         model_root=args.model_root
     )
 
     for GRAPH_NAME in args.graphs:
         # --- Setup Logging per Graph ---
-        log_filename = f"mapcmcc_{GRAPH_NAME}_{args.llm_model}_{timestamp}_runs{args.mc_runs}.log"
+        ablation_str = ""
+        if args.disable_ca: ablation_str += "_noCA"
+        if args.disable_ma: ablation_str += "_noMA"
+        if args.disable_ter: ablation_str += "_noTER"
+        if args.disable_ds: ablation_str += "_noDS"
+        
+        param_str = f"T{args.t_comm}_tau1-{args.tau_1}_tau2-{args.tau_2}_alpha-{args.merge_alpha}{ablation_str}"
+        # Replace slashes in model name to avoid creating unintended subdirectories
+        safe_model_name = args.llm_model.replace('/', '-')
+        log_filename = f"{GRAPH_NAME}_{safe_model_name}_{param_str}_{timestamp}_runs{args.mc_runs}.log"
         log_path = os.path.join(log_dir, log_filename)
+
         
         # Reset stdout to avoid nesting loggers
         sys.stdout = original_stdout
@@ -145,25 +171,36 @@ def main():
                 current_seed = 42 + k + r * 1000
                 random.seed(current_seed)
                 np.random.seed(current_seed)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(current_seed)
-                torch.manual_seed(current_seed)
+                
+                try:
+                    torch.manual_seed(current_seed)
+                    if torch.cuda.is_available():
+                        torch.cuda.manual_seed_all(current_seed)
+                except Exception as e:
+                    print(f"Warning: Failed to set torch seed, probably due to previous CUDA errors. Skipping. Error: {e}")
 
                 # Initialize Environment
                 print("Initializing MAPCMCC Environment...")
-                env = PCMCCEnvironment(GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, is_directed=is_directed)
+                env = PCMCCEnvironment(
+                    GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, 
+                    is_directed=is_directed, tau_1=args.tau_1, tau_2=args.tau_2, 
+                    merge_alpha=args.merge_alpha, merge_lambda=args.merge_lambda,
+                    disable_ter=args.disable_ter, disable_ds=args.disable_ds
+                )
                 
                 # Initialize Agents
                 community_agents = {}
                 for com_id in env.communities:
                     community_agents[com_id] = CommunityAgent(
                         agent_id=f"ComAgent_{com_id}",
-                        llm_client=llm_client
+                        llm_client=llm_client,
+                        tau_1=args.tau_1,
+                        tau_2=args.tau_2
                     )
                 
                 # MetaAgent
                 try:
-                    meta_agent = MetaAgent(llm_client=llm_client) 
+                    meta_agent = MetaAgent(llm_client=llm_client, tau_1=args.tau_1, tau_2=args.tau_2) 
                 except Exception as e:
                     print(f"Warning: Failed to initialize MetaAgent: {e}")
                     meta_agent = None
@@ -196,7 +233,9 @@ def main():
                         print(f"Initializing Agent for new community {cid}")
                         community_agents[cid] = CommunityAgent(
                             agent_id=f"ComAgent_{cid}",
-                            llm_client=llm_client
+                            llm_client=llm_client,
+                            tau_1=args.tau_1,
+                            tau_2=args.tau_2
                         )
                     
                     # 2. Agent Interaction (Every T_comm generations OR Emergency)
@@ -211,24 +250,27 @@ def main():
                             print("\n>>> Triggering Multi-Agent Interaction")
                         
                         # A. Community Agents
-                        for com_id, agent in community_agents.items():
-                            # Get Real Observation
-                            obs_dict = env.communities[com_id].get_observation(
-                                current_gen=gen,
-                                global_stage="exploration", # Simplified stage logic
-                                global_dpadv=env.global_best_dpadv
-                            )
-                            # Convert dict to Dataclass
-                            obs = CommunityObservation(**obs_dict)
-                            
-                            # Get Action (LLM/Rule-Based)
-                            action = agent.get_action(obs)
-                            
-                            # Apply Action
-                            env.apply_community_action(com_id, action)
+                        if not args.disable_ca:
+                            for com_id, agent in community_agents.items():
+                                # Get Real Observation
+                                obs_dict = env.communities[com_id].get_observation(
+                                    current_gen=gen,
+                                    global_stage="exploration", # Simplified stage logic
+                                    global_dpadv=env.global_best_dpadv
+                                )
+                                # Convert dict to Dataclass
+                                obs = CommunityObservation(**obs_dict)
+                                
+                                # Get Action (LLM/Rule-Based)
+                                action = agent.get_action(obs)
+                                
+                                # Apply Action
+                                env.apply_community_action(com_id, action)
+                        else:
+                            print("  -> Community Agents (CA) disabled via ablation.")
                             
                         # B. Meta Agent
-                        if meta_agent:
+                        if meta_agent and not args.disable_ma:
                             # Use the already fetched observation (or re-fetch if needed, but safe to reuse)
                             # Actually, community actions might have changed state, so re-fetch is safer for consistency
                             # but computationally expensive. 
@@ -244,6 +286,8 @@ def main():
                                 env.set_merge_suggestions(meta_action.merge_suggestions)
                             
                             env.apply_meta_action(meta_action)
+                        elif args.disable_ma:
+                            print("  -> Meta Agent (MA) disabled via ablation.")
                         
                     # 3. Check Convergence
                     if env.check_termination(MAX_GEN): 
@@ -296,7 +340,8 @@ def main():
         
         # 1. COICM Plot
         try:
-            output_fig_dir_coicm = f"../results/COICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_coicm = f"../results/COICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_coicm = f"../results/COICM/sensitivity"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
             
@@ -306,13 +351,13 @@ def main():
             for x, y in zip(K_VALUES, results_coicm):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
                 
-            plt.title(f'COICM {GRAPH_NAME}')
+            plt.title(f'COICM {GRAPH_NAME} ({param_str})')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(K_VALUES)
             plt.tight_layout()
             
-            plot_path_coicm = os.path.join(output_fig_dir_coicm, f'COICM_{GRAPH_NAME}_{args.llm_model}.png')
+            plot_path_coicm = os.path.join(output_fig_dir_coicm, f'COICM_{GRAPH_NAME}_{args.llm_model}_{param_str}.png')
             plt.savefig(plot_path_coicm)
             plt.close()
             print(f"Saved COICM plot to {plot_path_coicm}")
@@ -322,7 +367,8 @@ def main():
 
         # 2. MCICM Plot
         try:
-            output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            output_fig_dir_mcicm = f"../results/MCICM/sensitivity"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)
             
@@ -332,13 +378,13 @@ def main():
             for x, y in zip(K_VALUES, results_mcicm):
                 plt.text(x, y, f'{y:.2f}', ha='center', va='bottom')
                 
-            plt.title(f'MCICM {GRAPH_NAME}')
+            plt.title(f'MCICM {GRAPH_NAME} ({param_str})')
             plt.xlabel('k')
             plt.ylabel('Negatively Activated Nodes')
             plt.xticks(K_VALUES)
             plt.tight_layout()
             
-            plot_path_mcicm = os.path.join(output_fig_dir_mcicm, f'MCICM_{GRAPH_NAME}_{args.llm_model}.png')
+            plot_path_mcicm = os.path.join(output_fig_dir_mcicm, f'MCICM_{GRAPH_NAME}_{args.llm_model}_{param_str}.png')
             plt.savefig(plot_path_mcicm)
             plt.close()
             print(f"Saved MCICM plot to {plot_path_mcicm}")

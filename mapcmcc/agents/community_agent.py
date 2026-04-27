@@ -9,9 +9,11 @@ class CommunityAgent(BaseAgent):
     Agent controlling a single community.
     Uses LLM to make decisions on parameters and candidate seeds.
     """
-    def __init__(self, agent_id: str, llm_client: LLMClient = None):
+    def __init__(self, agent_id: str, llm_client: LLMClient = None, tau_1: float = 0.3, tau_2: float = 0.6):
         self.agent_id = agent_id
         self.llm_client = llm_client or LLMClient() # Default to mock if not provided
+        self.tau_1 = tau_1
+        self.tau_2 = tau_2
 
     def get_action(self, observation: CommunityObservation) -> CommunityAction:
         # 1. Prepare Observation
@@ -44,9 +46,9 @@ class CommunityAgent(BaseAgent):
         # --- DANGER ANALYSIS (Level 0/1/2) ---
         danger_score = obs_dict.get("danger_score", 0.0)
         danger_level = 0
-        if danger_score >= 0.6:
+        if danger_score >= self.tau_2:
             danger_level = 2 # Critical
-        elif danger_score >= 0.3:
+        elif danger_score >= self.tau_1:
             danger_level = 1 # Warning
             
         danger_context = ""
@@ -135,7 +137,7 @@ class CommunityAgent(BaseAgent):
                 action.parameters = step2_json.get("parameters")
                 
                 # --- Danger-based Parameter Correction (Rule-based Override) ---
-                if danger_score >= 0.3 and danger_score < 0.6 and action.parameters:
+                if danger_score >= self.tau_1 and danger_score < self.tau_2 and action.parameters:
                     # Constants
                     CR2_MAX = 0.9
                     BETA_MIN = 1.0
@@ -211,7 +213,11 @@ class CommunityAgent(BaseAgent):
                 3. **Selection**: Construct a single, superior seed set of size {observation.budget}. Mix high-scoring nodes (Exploitation) with boundary nodes (Exploration) if needed.
 
                 ### Output Requirement
-                Return ONLY the JSON object:
+                Return ONLY the JSON object.
+                Do NOT generate excessively long arrays for candidate_seed_set.
+                If you want to inject new seeds, keep the candidate_seed_set small (e.g., maximum 5-10 nodes).
+                
+                Output format:
                 {{ "candidate_seed_set": [id1, id2, ...] }}
                 """
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate candidate seed set. Respond with valid JSON."
