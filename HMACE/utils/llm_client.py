@@ -32,9 +32,12 @@ class LLMClient:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.model_root = model_root
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         
         self.pipeline = None
+        
+        if self.provider == "openai" and not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required when provider='openai'.")
         
         if self.provider == "local":
             self._init_local_model()
@@ -303,8 +306,8 @@ class LLMClient:
         Generates a fake JSON response based on keywords in the prompt.
         This allows testing the flow without paying for tokens.
         """
-        # Detect if this is a Community Agent or Meta Agent request
-        if "Community Agent" in system_prompt:
+        # Detect if this is a Local Agent or Global Agent request
+        if "Local Agent" in system_prompt:
             # Simulate a decision to adjust parameters slightly
             return json.dumps({
                 "reasoning": "Performance is stable, increasing exploration slightly.",
@@ -318,7 +321,7 @@ class LLMClient:
                 "candidate_seed_set": None
             })
         
-        elif "Meta Agent" in system_prompt:
+        elif "Global Agent" in system_prompt:
             # Simulate a decision to keep baselines
             return json.dumps({
                 "reasoning": "Global convergence is proceeding normally. No merges needed yet.",

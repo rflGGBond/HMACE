@@ -1,10 +1,10 @@
 from .base import BaseAgent
-from ..utils.types import MetaObservation, MetaAction
+from ..utils.types import GlobalObservation, GlobalAction
 from ..utils.llm_client import LLMClient
 import json
 import dataclasses
 
-class MetaAgent(BaseAgent):
+class GlobalAgent(BaseAgent):
     """
     Agent controlling the global parameters and merges.
     """
@@ -13,7 +13,7 @@ class MetaAgent(BaseAgent):
         self.tau_1 = tau_1
         self.tau_2 = tau_2
 
-    def get_action(self, observation: MetaObservation) -> MetaAction:
+    def get_action(self, observation: GlobalObservation) -> GlobalAction:
         # 1. Prepare Prompt
         obs_dict = dataclasses.asdict(observation)
         
@@ -34,7 +34,7 @@ class MetaAgent(BaseAgent):
                     struggling_communities.append(s.community_id)
         
         struggling_info_str = f"Communities needing merge (Low Improvement Rate <= Target): {struggling_communities}"
-        print(f"Meta-Agent Analysis: {struggling_info_str}")
+        print(f"Global Agent Analysis: {struggling_info_str}")
 
         # --- Identify High Danger Communities ---
         danger_communities = []
@@ -56,7 +56,7 @@ class MetaAgent(BaseAgent):
         else:
             danger_info_str = "No communities currently in danger zone.\n"
         
-        print(f"Meta-Agent Danger Analysis: {danger_info_str.strip()}")
+        print(f"Global Agent Danger Analysis: {danger_info_str.strip()}")
 
         # Get valid IDs for prompt grounding
         valid_ids = [s.community_id for s in observation.community_summaries]
@@ -123,7 +123,7 @@ class MetaAgent(BaseAgent):
             """
 
         system_prompt = f"""
-        You are the Meta Agent in the MAPCMCC evolutionary algorithm. 
+        You are the Global Agent in the HMACE evolutionary algorithm. 
         Your task is to coordinate the global optimization process by tuning parameters or MERGING communities to minimize the Global DPADV score by coordinating multiple communities.
         
         PARAMETER DEFINITIONS:
@@ -164,7 +164,7 @@ class MetaAgent(BaseAgent):
         # 2. Call LLM
         try:
             response_str = self.llm_client.get_completion(system_prompt, user_prompt, temperature=0.5)
-            print(f"Meta-Agent Response: {response_str}")  # 输出Meta Agent的原始响应
+            print(f"Global Agent Response: {response_str}")  # 输出Global Agent的原始响应
             response_json = json.loads(response_str)
             
             # 3. Parse Response to Action
@@ -196,7 +196,7 @@ class MetaAgent(BaseAgent):
             # HARD ENFORCEMENT: No merges if only 1 community exists
             if num_communities < 2:
                 if raw_suggestions:
-                    print(f"Meta-Agent Enforcement: Merges disabled for single community. Ignored suggestions: {raw_suggestions}")
+                    print(f"Global Agent Enforcement: Merges disabled for single community. Ignored suggestions: {raw_suggestions}")
                 raw_suggestions = []
 
             valid_suggestions = []
@@ -204,7 +204,7 @@ class MetaAgent(BaseAgent):
             # Build a lookup for community summaries to access closeness info
             com_lookup = {s.community_id: s for s in observation.community_summaries}
             
-            print(f"Meta-Agent Raw Suggestions: {raw_suggestions}")
+            print(f"Global Agent Raw Suggestions: {raw_suggestions}")
             
             for pair in raw_suggestions:
                 if not isinstance(pair, list) or len(pair) != 2:
@@ -222,7 +222,7 @@ class MetaAgent(BaseAgent):
                     continue
                 
                 # Check 2: Heuristic Score (Connection Strength)
-                # Logic derived from mapcmcc/core/merger.py: merge_score based on edge weights
+                # Logic derived from HMACE/core/merger.py: merge_score based on edge weights
                 # closeness_info in observation is exactly this sum of edge weights
                 
                 score_1_to_2 = com_lookup[id1].closeness_info.get(id2, 0.0)
@@ -239,7 +239,7 @@ class MetaAgent(BaseAgent):
                 else:
                     print(f"Merge Rejected: {id1}-{id2} (Score: {heuristic_score:.4f} - Too low/No connection)")
             
-            action = MetaAction(
+            action = GlobalAction(
                 global_baselines=response_json.get("global_baselines", {}),
                 budget_adjustments=budget_adjustments,
                 merge_suggestions=valid_suggestions
@@ -247,8 +247,8 @@ class MetaAgent(BaseAgent):
             return action
             
         except Exception as e:
-            print(f"LLM Error in MetaAgent: {e}. Fallback to default.")
-            return MetaAction(
+            print(f"LLM Error in GlobalAgent: {e}. Fallback to default.")
+            return GlobalAction(
                 budget_adjustments={},
                 global_baselines={},
                 merge_suggestions=[]

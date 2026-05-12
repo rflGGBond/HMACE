@@ -1,8 +1,8 @@
-# MAPCMCC: Multi-Agent Progressive Community Merging Cooperative Coevolution
+# HMACE
 
-**MAPCMCC** is a hybrid evolutionary framework that integrates **Cooperative Coevolution** with **Multi-Agent Systems (MAS)** and **Large Language Models (LLMs)**. It is designed to solve complex influence blocking maximization problems in large-scale social networks.
+**HMACE** is a hybrid evolutionary framework that integrates **Cooperative Coevolution** with **Multi-Agent Systems (MAS)** and **Large Language Models (LLMs)**. It is designed to solve complex influence blocking maximization problems in large-scale social networks.
 
-By wrapping the traditional PCMCC algorithm in an agent-based environment, MAPCMCC allows intelligent agents to dynamically adjust evolutionary parameters, propose candidate solutions, and guide community merging based on global insights.
+By wrapping the traditional PCMCC algorithm in an agent-based environment, HMACE allows intelligent agents to dynamically adjust evolutionary parameters, propose candidate solutions, and guide community merging based on global insights.
 
 ---
 
@@ -11,7 +11,7 @@ By wrapping the traditional PCMCC algorithm in an agent-based environment, MAPCM
 The project follows a strict 4-layer modular architecture to decouple mathematical logic from state management and decision-making.
 
 ```text
-mapcmcc/
+HMACE/
 ├── core/               # Layer 1: Mathematical Engine (Pure Logic)
 │   ├── evaluator.py    # DPADV Calculation, Negative/Positive Scoring
 │   ├── evolution.py    # Genetic Operations (Crossover, Mutation, Local Search)
@@ -24,8 +24,8 @@ mapcmcc/
 │
 ├── agents/             # Layer 3: Decision Making (Brain)
 │   ├── base.py         # Abstract Agent Interface
-│   ├── community_agent.py # Local Optimizer (LLM-based)
-│   └── meta_agent.py   # Global Controller (LLM-based)
+│   ├── local_agent.py   # Local Optimizer (LLM-based)
+│   └── global_agent.py  # Global Controller (LLM-based)
 │
 ├── utils/              # Layer 4: Utilities & Protocol
 │   ├── types.py        # Data Protocols (Observation/Action Dataclasses)
@@ -57,15 +57,15 @@ This layer contains stateless functions that perform the heavy lifting.
     - Generates `CommunityObservation` JSON for agents.
 
 ### 3. Agent Layer (`agents/`)
-- **`CommunityAgent`**: Assigned to each community.
+- **`LocalAgent`**: Assigned to each community.
     - **Mode A (Parameter Tuning)**: Dynamically adjusts `cr1`, `cr2`, `beta`, `alpha`.
     - **Mode B (Candidate Generation)**: Proposes specific seed sets to jump out of local optima.
-- **`MetaAgent`**: Single global controller.
+- **`GlobalAgent`**: Single global controller.
     - Monitors global convergence.
     - Suggests **Global Baselines** and **Community Merges**.
 
 ### 4. Utils Layer (`utils/`)
-- **`types.py`**: Defines the strict "Communication Protocol" between Env and Agents using Python Dataclasses (`CommunityObservation`, `MetaAction`, etc.).
+- **`types.py`**: Defines the strict "Communication Protocol" between Env and Agents using Python Dataclasses (`CommunityObservation`, `GlobalAction`, etc.).
 - **`llm_client.py`**: A unified interface for LLM calls. Supports a `mock` mode for testing and an `openai` mode for production.
 
 ---
@@ -91,7 +91,7 @@ bash run.sh
 **Using Python:**
 ```bash
 # Make sure you are in the parent directory (e:\PCMCC\PCMCC\COICM)
-python mapcmcc/run.py --graph_name facebook --total_budget 50 --num_communities 4
+python HMACE/run.py --graphs facebook --total_budget 50 --num_communities 4
 ```
 
 **Arguments:**
@@ -107,7 +107,7 @@ python mapcmcc/run.py --graph_name facebook --total_budget 50 --num_communities 
 
 The system is pre-configured with a **Mock LLM** to ensure it runs out-of-the-box without API keys. To enable real LLM intelligence:
 
-1.  **Open** `mapcmcc/utils/llm_client.py`.
+1.  **Open** `HMACE/utils/llm_client.py`.
 2.  **Locate** the `LLMClient` class.
 3.  **Change** the default provider in `__init__`:
     ```python
@@ -115,11 +115,13 @@ The system is pre-configured with a **Mock LLM** to ensure it runs out-of-the-bo
     ```
 4.  **Set Environment Variable**:
     ```bash
-    export OPENAI_API_KEY="sk-..."
+    export OPENAI_API_KEY="<your-api-key>"
+    # Optional for OpenRouter or other OpenAI-compatible providers:
+    export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
     ```
 5.  **Customize Prompts**:
-    - Modify `mapcmcc/agents/community_agent.py` to change how the Community Agent perceives its state.
-    - Modify `mapcmcc/agents/meta_agent.py` to adjust the Meta Agent's global strategy.
+    - Modify `HMACE/agents/local_agent.py` to change how the Local Agent perceives its state.
+    - Modify `HMACE/agents/global_agent.py` to adjust the Global Agent's global strategy.
 
 ---
 
@@ -134,7 +136,7 @@ The system is pre-configured with a **Mock LLM** to ensure it runs out-of-the-bo
         - **Observe**: Agents receive JSON observations (History, Diversity, Top-K Nodes).
         - **Decide**: Agents call LLM to get Actions (Tune Params or Propose Seeds).
         - **Apply**: Environment executes actions (with validation).
-    - **Merge Check**: Meta Agent evaluates if communities should merge.
+    - **Merge Check**: Global Agent evaluates if communities should merge.
 3.  **Termination**:
     - Returns the best global seed set $S^*$ found.
 

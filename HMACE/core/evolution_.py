@@ -1,3 +1,4 @@
+
 import random
 import copy
 from collections import defaultdict
@@ -46,7 +47,7 @@ def sample(l1, w1, k):
 
     return rs
 
-def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
+def local_search(S1, G, com_and_fs, hop, N_prob, gama_com):
     """
     Simplified interface for local search, operating on standard lists.
     Returns the optimized seed set S1.
@@ -56,9 +57,6 @@ def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
     
     if budget == 0:
         return S1
-    
-    # Calculate initial fitness to ensure strict improvement
-    current_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
     
     while True:
         discount_P_score_diff = []
@@ -195,17 +193,10 @@ def local_search(S1, G, SN, com_and_fs, hop, N_prob, gama_com):
 
         S1[I_worst] = rn
 
-        # 4. Check if improvement occurred (Strict Monotonicity Check)
-        # Calculate real fitness of the candidate S1
-        new_fitness = DPADVEvaluator.calculate_fitness(S1, G, SN, com_and_fs, hop)
-        
-        # If real fitness improved, keep change and update current_fitness
-        if new_fitness < current_fitness:
-            current_fitness = new_fitness
-            Sbest = copy.deepcopy(S1) # Update best
-        else:
-            # Revert to previous best state and BREAK
-            S1 = copy.deepcopy(Sbest)
+        # 4. Check if improvement occurred (Simple check: if we picked a new node)
+        # Note: In original code, it recalculates fitness to be sure.
+        # Here we just check if S1 changed.
+        if S1 == Sbest:
             break
             
     return S1
@@ -240,8 +231,6 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
     Pure function to perform crossover and mutation on two individuals.
     Returns both new offspring (S1, SI).
     """
-    cOne = float(cOne)
-    cTwo = float(cTwo)
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
     
@@ -249,7 +238,7 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
     # com_sn is assumed to be sorted (e.g. by degree) as passed from env
     current_pool = com_sn
     if alpha is not None:
-        pool_size = int(float(alpha) * float(budget))
+        pool_size = int(alpha * budget)
         if pool_size < len(com_sn):
             current_pool = com_sn[:pool_size]
     
@@ -289,15 +278,10 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
         if candidates:
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
-            for e in range(len(S1)):
+            for e in range(budget):
                 if S1[e] == -1 and J < len(replaceS1):
                     S1[e] = replaceS1[J]
                     J += 1
-    
-    # Fallback: If -1 still exists (candidates exhausted), fill with random valid nodes
-    while -1 in S1:
-        idx = S1.index(-1)
-        S1[idx] = random.choice(current_pool)
                     
     # Fix duplicates SI
     if repeatSI != 0:
@@ -305,15 +289,10 @@ def crossover_and_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alph
         if candidates:
             replaceSI = sample(candidates, P_score, repeatSI)
             J = 0
-            for e in range(len(SI)):
+            for e in range(budget):
                 if SI[e] == -1 and J < len(replaceSI):
                     SI[e] = replaceSI[J]
                     J += 1
-                    
-    # Fallback for SI
-    while -1 in SI:
-        idx = SI.index(-1)
-        SI[idx] = random.choice(current_pool)
     
     return S1, SI
 
@@ -321,15 +300,13 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
     """
     Performs full crossover/mutation on two individuals, returning both modified versions.
     """
-    cOne = float(cOne)
-    cTwo = float(cTwo)
     S1 = copy.deepcopy(S1_in)
     SI = copy.deepcopy(SI_in)
     
     # Apply alpha reduction if provided
     current_pool = com_sn
     if alpha is not None:
-        pool_size = int(float(alpha) * float(budget))
+        pool_size = int(alpha * budget)
         if pool_size < len(com_sn):
             current_pool = com_sn[:pool_size]
     
@@ -364,15 +341,10 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
         if candidates:
             replaceS1 = sample(candidates, P_score, repeatS1)
             J = 0
-            for e in range(len(S1)):
+            for e in range(budget):
                 if S1[e] == -1 and J < len(replaceS1):
                     S1[e] = replaceS1[J]
                     J += 1
-
-    # Fallback for S1
-    while -1 in S1:
-        idx = S1.index(-1)
-        S1[idx] = random.choice(current_pool)
 
     # Fix duplicates SI
     if repeatSI != 0:
@@ -380,15 +352,10 @@ def full_crossover_mutate(S1_in, SI_in, budget, cOne, cTwo, com_sn, P_score, alp
         if candidates:
             replaceSI = sample(candidates, P_score, repeatSI)
             J = 0
-            for e in range(len(SI)):
+            for e in range(budget):
                 if SI[e] == -1 and J < len(replaceSI):
                     SI[e] = replaceSI[J]
                     J += 1
-    
-    # Fallback for SI
-    while -1 in SI:
-        idx = SI.index(-1)
-        SI[idx] = random.choice(current_pool)
     
     return S1, SI
 
@@ -409,12 +376,12 @@ def _evolve_subpopulation_step(
 
     # Update shared memory if better
     if effectS1 < shared_islands_effect[islands_effect_index[community_id, subpop_id, index_s1]]:
-        for X in range(len(new_S1)):
+        for X in range(budget):
             shared_islands[islands_index[community_id, subpop_id, index_s1, X]] = new_S1[X]
         shared_islands_effect[islands_effect_index[community_id, subpop_id, index_s1]] = effectS1
 
     if effectSI < shared_islands_effect[islands_effect_index[community_id, subpop_id, I]]:
-        for X in range(len(new_SI)):
+        for X in range(budget):
             shared_islands[islands_index[community_id, subpop_id, I, X]] = new_SI[X]
         shared_islands_effect[islands_effect_index[community_id, subpop_id, I]] = effectSI
 
@@ -758,7 +725,7 @@ def evolve_community(
         # Break condition for Max Community (One generation per call? Or loop internally?)
         # The original code loops indefinitely for non-max, but max-community seems to also loop?
         # Actually, `evolution_11` in original code has `g_11 = 0` then loops.
-        # But `mapcmcc` structure calls `env.step()` which implies ONE generation.
+        # But `HMACE` structure calls `env.step()` which implies ONE generation.
         # So we should probably BREAK after one generation here to return control to main loop.
         
         break # Exit after 1 generation step
