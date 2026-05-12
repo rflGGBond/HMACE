@@ -189,7 +189,7 @@ class Community:
 
     def get_observation(self, current_gen: int, global_stage: str, global_dpadv: float) -> Dict[str, Any]:
         """
-        Generates the observation dictionary for the Community Agent (LLM).
+        Generates the observation dictionary for the Local Agent (LLM).
         """
         import math
         

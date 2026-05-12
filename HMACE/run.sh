@@ -15,13 +15,16 @@ LLM_PROVIDER="local"
 # LLM_MODEL="claude-3-7-sonnet" 
 # LLM_MODEL="Qwen2.5-7B-Instruct"
 LLM_MODEL="Meta-Llama-3.1-8B-Instruct"
-# API_KEY="sk-WawUuKWJpbYJguipBd721182BfAa48D594A6Fc57839242F0" 
-API_KEY="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"
-# API_KEY="sk-524c07fb8b534c359fe3d2ce8cdc39c8"
-# BASE_URL="https://aihubmix.com/v1"
-BASE_URL="https://openrouter.ai/api/v1"
-# BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+API_KEY="${OPENAI_API_KEY:-}"
+BASE_URL="${OPENAI_BASE_URL:-}"
 MODEL_ROOT="../../models"
+
+if [ "$LLM_PROVIDER" = "openai" ] && [ -z "$API_KEY" ]; then
+    echo "Error: OPENAI_API_KEY is required when LLM_PROVIDER=openai." >&2
+    echo "Set it before running, for example: export OPENAI_API_KEY='<your-api-key>'" >&2
+    echo "For OpenRouter or other compatible APIs, also set OPENAI_BASE_URL if needed." >&2
+    exit 1
+fi
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # # Suppress tokenizers warning when forking
@@ -34,7 +37,7 @@ export CUDA_VISIBLE_DEVICES="2,3"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-echo "Running MAPCMCC with:"
+echo "Running HMACE with:"
 echo "GRAPHS=$GRAPHS"
 echo "TOTAL_BUDGET=$TOTAL_BUDGET"
 echo "NUM_COMMUNITIES=$NUM_COMMUNITIES"
@@ -42,10 +45,14 @@ echo "MAX_GEN=$MAX_GEN"
 echo "T_COMM=$T_COMM"
 echo "LLM_PROVIDER=$LLM_PROVIDER"
 echo "LLM_MODEL=$LLM_MODEL"
+if [ "$LLM_PROVIDER" = "openai" ]; then
+    echo "OPENAI_API_KEY=<set>"
+    echo "OPENAI_BASE_URL=${BASE_URL:-<default>}"
+fi
 echo "-----------------------------------"
 
 # Run the python script
-# We run 'run.py' directly since we are in mapcmcc directory, 
+# We run 'run.py' directly since we are in HMACE directory, 
 # but run.py handles imports by adding parent to sys.path
 python3 run.py \
     --graphs $GRAPHS \

@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from ..core import graph_ops, evaluator, evolution, merger, gamma_merger
 from .community import Community
-from ..utils.types import CommunityAction, MetaAction, MetaObservation, CommunitySummary
+from ..utils.types import CommunityAction, GlobalAction, GlobalObservation, CommunitySummary
 import random
 
 class PCMCCEnvironment:
@@ -74,7 +74,7 @@ class PCMCCEnvironment:
 
     def set_merge_suggestions(self, suggestions: List[tuple]):
         """
-        Stores merge suggestions from Meta-Agent to be executed in the next step.
+        Stores merge suggestions from Global Agent to be executed in the next step.
         """
         self.pending_merge_suggestions = suggestions
 
@@ -227,7 +227,7 @@ class PCMCCEnvironment:
     def _execute_merges(self, strict_validation: bool = True):
         """
         Executes the pending merge suggestions by merging Community objects.
-        If strict_validation=True (Meta-Agent), implements weighted gain evaluation, positive gain filtering, and Top-2 logic.
+        If strict_validation=True (Global Agent), implements weighted gain evaluation, positive gain filtering, and Top-2 logic.
         If strict_validation=False (Heuristic), executes merges directly (assumes they are pre-validated by rules).
         """
         if not self.pending_merge_suggestions:
@@ -247,7 +247,7 @@ class PCMCCEnvironment:
             if len(valid_group) < 2:
                 continue
             
-            # --- Logic for Strict Validation (Meta-Agent) ---
+            # --- Logic for Strict Validation (Global Agent) ---
             if strict_validation:
                 # --- Filter 1: Gamma-Reduction Merge Score Check ---
                 merge_score_sum = 0
@@ -471,7 +471,7 @@ class PCMCCEnvironment:
         if merge_groups:
             print(f"Heuristic Merge Groups: {merge_groups}")
             self.set_merge_suggestions(merge_groups)
-            # Use strict_validation=False to bypass Meta-Agent specific checks
+            # Use strict_validation=False to bypass Global Agent specific checks
             self._execute_merges(strict_validation=False)
 
     def step(self, agent_active: bool = False):
@@ -487,10 +487,10 @@ class PCMCCEnvironment:
         # 0. Check and Execute Merges
         # A. Priority: Pending Agent Suggestions
         if self.pending_merge_suggestions:
-            # Assuming pending suggestions here are from Meta-Agent (strict check)
+            # Assuming pending suggestions here are from Global Agent (strict check)
             # But if they were set by heuristic just now? 
             # Actually _check_heuristic_merge calls execute immediately.
-            # So if we are here, it must be from Meta-Agent set in previous turn.
+            # So if we are here, it must be from Global Agent set in previous turn.
             self._execute_merges(strict_validation=True)
         # B. Fallback: Heuristic Merging (Only if no Agent active)
         elif not agent_active:
@@ -511,12 +511,12 @@ class PCMCCEnvironment:
                 # MARK DANGER STATE
                 self.was_in_critical_danger = True
                 
-                # Check if Meta-Agent already set aggressive parameters
+                # Check if Global Agent already set aggressive parameters
                 # Thresholds: Alpha >= 20.0, CR2 >= 0.8
                 is_aggressive = (com.state.alpha >= 20.0) and (com.state.cr2 >= 0.8)
                 
                 if not is_aggressive:
-                    print(f"System Enforcement: Meta-Agent failed to respond to danger signal. Forcibly executing 'Forced Perturbation' strategy for Community {com_id} (Danger: {danger:.2f} >= {self.tau_2}).")
+                    print(f"System Enforcement: Global Agent failed to respond to danger signal. Forcibly executing 'Forced Perturbation' strategy for Community {com_id} (Danger: {danger:.2f} >= {self.tau_2}).")
                     # Force Aggressive Parameters (Alpha=25, CR2=0.9, Beta=1.5)
                     com.state.alpha = 25.0
                     com.state.cr2 = 0.9
@@ -526,7 +526,7 @@ class PCMCCEnvironment:
             
             elif danger >= self.tau_1 and danger < self.tau_2:
                 pass
-                # Level 1 logic moved to Community Agent as per request
+                # Level 1 logic moved to Local Agent as per request
 
         # 1. Parallel Evolution (Simulated Single-Threaded with Real Logic)
         print(f"Env: Executing step {self.current_gen}...")
@@ -718,7 +718,7 @@ class PCMCCEnvironment:
 
     def get_global_observation(self):
         """
-        Aggregates state to form MetaObservation.
+        Aggregates state to form GlobalObservation.
         """
         # --- Calculate Community Closeness ---
         # Call logic from merger.py as requested
@@ -777,7 +777,7 @@ class PCMCCEnvironment:
                 delta_ref = avg_imp
         
         summaries = []
-        emergency_meta_call = False # Flag for emergency intervention
+        emergency_global_call = False # Flag for emergency intervention
 
         for com_id, com in self.communities.items():
             # Get calculated closeness
@@ -807,7 +807,7 @@ class PCMCCEnvironment:
             # Check for Critical Danger
             # If current danger is high OR danger was detected during step execution
             if danger_i >= self.tau_2 or self.was_in_critical_danger:
-                emergency_meta_call = True
+                emergency_global_call = True
             
             summaries.append(CommunitySummary(
                 community_id=com_id,
@@ -821,19 +821,19 @@ class PCMCCEnvironment:
                 gamma=gamma_i
             ))
             
-        return MetaObservation(
+        return GlobalObservation(
             current_generation=self.current_gen,
             current_global_dpadv=self.global_best_dpadv,
             global_dpadv_history=self.global_dpadv_history,
             community_summaries=summaries,
             merge_history=self.merge_history,
             parameter_history=self.parameter_history,
-            emergency_meta_call=emergency_meta_call # Pass the flag
+            emergency_global_call=emergency_global_call # Pass the flag
         )
 
     def apply_community_action(self, community_id: int, action: CommunityAction):
         """
-        Applies the action from a Community Agent, including strict candidate evaluation.
+        Applies the action from a Local Agent, including strict candidate evaluation.
         """
         com = self.communities.get(community_id)
         if not com: return
@@ -1009,13 +1009,13 @@ class PCMCCEnvironment:
             
         return False
 
-    def apply_meta_action(self, action: MetaAction):
+    def apply_global_action(self, action: GlobalAction):
         """
-        Applies global decisions from Meta-Agent.
+        Applies global decisions from Global Agent.
         """
         # 1. Update Global Baselines - Now with Global Simulation Evaluation
         if action.global_baselines:
-            print(f"Meta-Agent proposing global baselines: {action.global_baselines}")
+            print(f"Global Agent proposing global baselines: {action.global_baselines}")
             
             # --- Global Simulation Step ---
             # Simulate one step for ALL communities using the new global parameters
@@ -1050,7 +1050,7 @@ class PCMCCEnvironment:
                          SI[idx] = random.choice(candidates)
                 
                 # B. Crossover (using NEW GLOBAL parameters)
-                # Note: Meta-Agent sets baselines, but communities might have their own overrides.
+                # Note: Global Agent sets baselines, but communities might have their own overrides.
                 # Here we assume Global Baseline overrides everything for the simulation to test its pure effect.
                 S1_input = copy.deepcopy(current_seed)
                 S1_sim, _ = evolution.crossover_and_mutate(
@@ -1124,7 +1124,7 @@ class PCMCCEnvironment:
                 
         # 2. Update Budgets (Redistribution)
         if action.budget_adjustments:
-            print(f"Meta-Agent adjusting budgets: {action.budget_adjustments}")
+            print(f"Global Agent adjusting budgets: {action.budget_adjustments}")
             
             # 1. Apply Adjustments
             temp_budgets = {}

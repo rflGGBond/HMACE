@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 
-# --- Community Agent Types ---
+# --- Local Agent Types ---
 
 @dataclass
 class CommunityObservation:
@@ -28,7 +28,7 @@ class CommunityAction:
     # Mode B: Candidate Generation
     candidate_seed_set: Optional[List[int]] = None
     
-# --- Meta Agent Types ---
+# --- Global Agent Types ---
 
 @dataclass
 class CommunitySummary:
@@ -43,17 +43,17 @@ class CommunitySummary:
     gamma: float = 0.0 # Clusteredness
 
 @dataclass
-class MetaObservation:
+class GlobalObservation:
     current_generation: int
     current_global_dpadv: float
     global_dpadv_history: List[float]
     community_summaries: List[CommunitySummary]
     merge_history: List[Any]
     parameter_history: List[Dict[str, Any]] = field(default_factory=list) # [{'params': {...}, 'global_score': float}]
-    emergency_meta_call: bool = False
+    emergency_global_call: bool = False
 
 @dataclass
-class MetaAction:
+class GlobalAction:
     # 1. Global Baselines
     global_baselines: Optional[Dict[str, float]] = None
     

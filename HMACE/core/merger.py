@@ -18,7 +18,7 @@ def calculate_connection_strength(G, nodes_i, nodes_j):
     # merge_score[i, j] += (one_score * G[edge[0]][edge[1]]['weight'])
     # where one_score was sum of weights of neighbors in subG.
     
-    # For MAPCMCC Env usage, we use direct edge weight sum as a robust proxy.
+    # For HMACE Env usage, we use direct edge weight sum as a robust proxy.
     try:
         edges = list(nx.edge_boundary(G, nodes_i, nodes_j, data='weight', default=1.0))
         for u, v, w in edges:

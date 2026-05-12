@@ -9,13 +9,13 @@ import datetime
 # Add the parent directory to sys.path to allow imports if running as script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mapcmcc.environment.env import PCMCCEnvironment
-from mapcmcc.agents.community_agent import CommunityAgent
-from mapcmcc.agents.meta_agent import MetaAgent
-from mapcmcc.utils.types import CommunityObservation, MetaObservation
-from mapcmcc.utils.llm_client import LLMClient
-from mapcmcc.utils.select_SN import select_SN
-from mapcmcc.core.evaluator import DPADVEvaluator
+from HMACE.environment.env import PCMCCEnvironment
+from HMACE.agents.local_agent import LocalAgent
+from HMACE.agents.global_agent import GlobalAgent
+from HMACE.utils.types import CommunityObservation
+from HMACE.utils.llm_client import LLMClient
+from HMACE.utils.select_SN import select_SN
+from HMACE.core.evaluator import DPADVEvaluator
 import random
 import numpy as np
 import torch
@@ -49,7 +49,7 @@ UNDIRECTED_GRAPHS = {"BA3000", "ER3000", "RG3000", "WS3000", "as-caida", "arenas
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Run MAPCMCC")
+    parser = argparse.ArgumentParser(description="Run HMACE")
     parser.add_argument("--graphs", type=str, nargs='+', default=["facebook"], help="List of graph names to run (e.g. facebook email-Eu-core)")
     parser.add_argument("--total_budget", type=int, nargs='+', default=[20, 110, 200], help="List of total budgets (k values)")
     parser.add_argument("--num_communities", type=int, default=16, help="Number of communities")
@@ -70,8 +70,8 @@ def main():
     parser.add_argument("--model_root", type=str, default="../../models", help="Root directory for local models")
 
     # Ablation Study Arguments
-    parser.add_argument("--disable_ca", action="store_true", help="Disable Community Agent")
-    parser.add_argument("--disable_ma", action="store_true", help="Disable Meta Agent")
+    parser.add_argument("--disable_la", action="store_true", help="Disable Local Agent")
+    parser.add_argument("--disable_ga", action="store_true", help="Disable Global Agent")
     parser.add_argument("--disable_ter", action="store_true", help="Disable Try-Evaluate-Revert (accept all proposals)")
     parser.add_argument("--disable_ds", action="store_true", help="Disable Danger Sensing (and forced perturbation)")
 
@@ -102,16 +102,16 @@ def main():
     llm_client = LLMClient(
         provider=args.llm_provider,
         model=args.llm_model,
-        api_key=args.api_key,
-        base_url=args.base_url,
+        api_key=args.api_key or None,
+        base_url=args.base_url or None,
         model_root=args.model_root
     )
 
     for GRAPH_NAME in args.graphs:
         # --- Setup Logging per Graph ---
         ablation_str = ""
-        if args.disable_ca: ablation_str += "_noCA"
-        if args.disable_ma: ablation_str += "_noMA"
+        if args.disable_la: ablation_str += "_noLA"
+        if args.disable_ga: ablation_str += "_noGA"
         if args.disable_ter: ablation_str += "_noTER"
         if args.disable_ds: ablation_str += "_noDS"
         
@@ -180,7 +180,7 @@ def main():
                     print(f"Warning: Failed to set torch seed, probably due to previous CUDA errors. Skipping. Error: {e}")
 
                 # Initialize Environment
-                print("Initializing MAPCMCC Environment...")
+                print("Initializing HMACE Environment...")
                 env = PCMCCEnvironment(
                     GRAPH_PATH, SN_NODES, k, NUM_COMMUNITIES, 
                     is_directed=is_directed, tau_1=args.tau_1, tau_2=args.tau_2, 
@@ -189,21 +189,21 @@ def main():
                 )
                 
                 # Initialize Agents
-                community_agents = {}
+                local_agents = {}
                 for com_id in env.communities:
-                    community_agents[com_id] = CommunityAgent(
-                        agent_id=f"ComAgent_{com_id}",
+                    local_agents[com_id] = LocalAgent(
+                        agent_id=f"LocalAgent_{com_id}",
                         llm_client=llm_client,
                         tau_1=args.tau_1,
                         tau_2=args.tau_2
                     )
                 
-                # MetaAgent
+                # GlobalAgent
                 try:
-                    meta_agent = MetaAgent(llm_client=llm_client, tau_1=args.tau_1, tau_2=args.tau_2) 
+                    global_agent = GlobalAgent(llm_client=llm_client, tau_1=args.tau_1, tau_2=args.tau_2) 
                 except Exception as e:
-                    print(f"Warning: Failed to initialize MetaAgent: {e}")
-                    meta_agent = None
+                    print(f"Warning: Failed to initialize GlobalAgent: {e}")
+                    global_agent = None
                 
                 print("Starting Evolution Loop...")
                 start_time = time.time()
@@ -221,18 +221,18 @@ def main():
                     
                     # Sync Agents with Environment (Handle Merges)
                     current_community_ids = set(env.communities.keys())
-                    agent_ids = set(community_agents.keys())
+                    agent_ids = set(local_agents.keys())
                     
                     # Remove agents for deleted communities
                     for cid in agent_ids - current_community_ids:
                         print(f"Removing Agent for merged/deleted community {cid}")
-                        del community_agents[cid]
+                        del local_agents[cid]
                         
                     # Add agents for new communities
                     for cid in current_community_ids - agent_ids:
                         print(f"Initializing Agent for new community {cid}")
-                        community_agents[cid] = CommunityAgent(
-                            agent_id=f"ComAgent_{cid}",
+                        local_agents[cid] = LocalAgent(
+                            agent_id=f"LocalAgent_{cid}",
                             llm_client=llm_client,
                             tau_1=args.tau_1,
                             tau_2=args.tau_2
@@ -241,7 +241,7 @@ def main():
                     # 2. Agent Interaction (Every T_comm generations OR Emergency)
                     # Get Global Observation to check for emergency
                     global_obs = env.get_global_observation()
-                    emergency_trigger = global_obs.emergency_meta_call
+                    emergency_trigger = global_obs.emergency_global_call
 
                     if gen % T_COMM == 0 or emergency_trigger:
                         if emergency_trigger:
@@ -249,9 +249,9 @@ def main():
                         else:
                             print("\n>>> Triggering Multi-Agent Interaction")
                         
-                        # A. Community Agents
-                        if not args.disable_ca:
-                            for com_id, agent in community_agents.items():
+                        # A. Local Agents
+                        if not args.disable_la:
+                            for com_id, agent in local_agents.items():
                                 # Get Real Observation
                                 obs_dict = env.communities[com_id].get_observation(
                                     current_gen=gen,
@@ -267,27 +267,27 @@ def main():
                                 # Apply Action
                                 env.apply_community_action(com_id, action)
                         else:
-                            print("  -> Community Agents (CA) disabled via ablation.")
+                            print("  -> Local Agents (LA) disabled via ablation.")
                             
-                        # B. Meta Agent
-                        if meta_agent and not args.disable_ma:
+                        # B. Global Agent
+                        if global_agent and not args.disable_ga:
                             # Use the already fetched observation (or re-fetch if needed, but safe to reuse)
                             # Actually, community actions might have changed state, so re-fetch is safer for consistency
                             # but computationally expensive. 
-                            # However, Meta-Agent needs accurate info. Let's re-fetch briefly or just use current.
+                            # However, Global Agent needs accurate info. Let's re-fetch briefly or just use current.
                             # For consistency with original logic, let's re-fetch.
                             obs = env.get_global_observation()
                             
-                            meta_action = meta_agent.get_action(obs)
+                            global_action = global_agent.get_action(obs)
                             
-                            # 2.1 Apply Meta-Agent Suggestions to Environment
-                            if meta_action.merge_suggestions:
-                                print(f"Meta-Agent suggests merging: {meta_action.merge_suggestions}")
-                                env.set_merge_suggestions(meta_action.merge_suggestions)
+                            # 2.1 Apply Global Agent Suggestions to Environment
+                            if global_action.merge_suggestions:
+                                print(f"Global Agent suggests merging: {global_action.merge_suggestions}")
+                                env.set_merge_suggestions(global_action.merge_suggestions)
                             
-                            env.apply_meta_action(meta_action)
-                        elif args.disable_ma:
-                            print("  -> Meta Agent (MA) disabled via ablation.")
+                            env.apply_global_action(global_action)
+                        elif args.disable_ga:
+                            print("  -> Global Agent (GA) disabled via ablation.")
                         
                     # 3. Check Convergence
                     if env.check_termination(MAX_GEN): 
@@ -340,7 +340,7 @@ def main():
         
         # 1. COICM Plot
         try:
-            # output_fig_dir_coicm = f"../results/COICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_coicm = f"../results/COICM/HMACE2/repeats{args.repeats}_runs{args.mc_runs}"
             output_fig_dir_coicm = f"../results/COICM/sensitivity"
             if not os.path.exists(output_fig_dir_coicm):
                 os.makedirs(output_fig_dir_coicm)
@@ -367,7 +367,7 @@ def main():
 
         # 2. MCICM Plot
         try:
-            # output_fig_dir_mcicm = f"../results/MCICM/MAPCMCC2/repeats{args.repeats}_runs{args.mc_runs}"
+            # output_fig_dir_mcicm = f"../results/MCICM/HMACE2/repeats{args.repeats}_runs{args.mc_runs}"
             output_fig_dir_mcicm = f"../results/MCICM/sensitivity"
             if not os.path.exists(output_fig_dir_mcicm):
                 os.makedirs(output_fig_dir_mcicm)

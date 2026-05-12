@@ -4,7 +4,7 @@ from ..utils.llm_client import LLMClient
 import json
 import dataclasses
 
-class CommunityAgent(BaseAgent):
+class LocalAgent(BaseAgent):
     """
     Agent controlling a single community.
     Uses LLM to make decisions on parameters and candidate seeds.
@@ -18,8 +18,8 @@ class CommunityAgent(BaseAgent):
     def get_action(self, observation: CommunityObservation) -> CommunityAction:
         # 1. Prepare Observation
         obs_dict = dataclasses.asdict(observation)
-        # print(f"Community Agent {self.agent_id} Observation: {obs_dict}")
-        # print(f"Community Agent {self.agent_id} Budget: {observation.budget}")
+        # print(f"Local Agent {self.agent_id} Observation: {obs_dict}")
+        # print(f"Local Agent {self.agent_id} Budget: {observation.budget}")
         
         # Truncate history to prevent prompt overflow
         if "dpadv_history" in obs_dict and isinstance(obs_dict["dpadv_history"], list):
@@ -63,7 +63,7 @@ class CommunityAgent(BaseAgent):
         elif danger_level == 2:
             danger_context = f"""
             CRITICAL: DANGER LEVEL 2 DETECTED (Score: {danger_score:.2f}).
-            The community is critically stagnant. Meta-Agent may intervene soon.
+            The community is critically stagnant. Global Agent may intervene soon.
             REQUIRED ACTION:
             - Maximize exploration immediately.
             - If proposing candidates, you MUST include boundary nodes to break the structure.
@@ -72,7 +72,7 @@ class CommunityAgent(BaseAgent):
         try:
             # --- STEP 1: DECIDE ACTION TYPE (Low Temperature for Stability) ---
             step1_system_prompt = f"""
-            You are an intelligent Community Agent in the MAPCMCC evolutionary algorithm.
+            You are an intelligent Local Agent in the HMACE evolutionary algorithm.
             
             GOAL: Minimize 'DPADV' (Blocking Influence) for your community.
             
@@ -91,7 +91,7 @@ class CommunityAgent(BaseAgent):
             step1_user_prompt = f"Current Observation: {obs_json_str}\n\nDecide action type. Respond with valid JSON."
             
             response_step1_str = self.llm_client.get_completion(step1_system_prompt, step1_user_prompt, temperature=0.8)
-            print(f"Community Agent {self.agent_id} Step 1 Response: {response_step1_str}")
+            print(f"Local Agent {self.agent_id} Step 1 Response: {response_step1_str}")
             step1_json = json.loads(response_step1_str)
             
             action_type = step1_json.get("action_type")
@@ -131,7 +131,7 @@ class CommunityAgent(BaseAgent):
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate parameters. Respond with valid JSON."
                 
                 response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=param_temp)
-                print(f"Community Agent {self.agent_id} Step 2 (Mode A) Response: {response_step2_str}")
+                print(f"Local Agent {self.agent_id} Step 2 (Mode A) Response: {response_step2_str}")
                 step2_json = json.loads(response_step2_str)
                 
                 action.parameters = step2_json.get("parameters")
@@ -223,7 +223,7 @@ class CommunityAgent(BaseAgent):
                 step2_user_prompt = f"Current Observation: {obs_json_str}\n\nReasoning: {reasoning}\n\nGenerate candidate seed set. Respond with valid JSON."
                 
                 response_step2_str = self.llm_client.get_completion(step2_system_prompt, step2_user_prompt, temperature=0.7)
-                print(f"Community Agent {self.agent_id} Step 2 (Mode B) Response: {response_step2_str}")
+                print(f"Local Agent {self.agent_id} Step 2 (Mode B) Response: {response_step2_str}")
                 step2_json = json.loads(response_step2_str)
                 
                 candidates = step2_json.get("candidate_seed_set")
@@ -258,6 +258,6 @@ class CommunityAgent(BaseAgent):
             return action
             
         except Exception as e:
-            print(f"LLM Error in CommunityAgent {self.agent_id}: {e}.")
+            print(f"LLM Error in LocalAgent {self.agent_id}: {e}.")
             print("Fallback to default.")
             return CommunityAction()  # Return empty action (do nothing)
