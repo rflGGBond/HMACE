@@ -1,6 +1,6 @@
 import os
 
-graph_dir = "/home/dell/lfr/PCMCC/graph"
+graph_dir = "/data/lfr/HMACE/graph"
 files = [f for f in os.listdir(graph_dir) if f.endswith(".txt")]
 files.sort()
 
